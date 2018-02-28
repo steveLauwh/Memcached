@@ -2,7 +2,7 @@
 
 Memcached 是一个开源的软件，高性能的分布式内存缓存系统。
 
-![](https://github.com/steveLauwh/Memcached/tree/master/The%20Annotated%20Memcached%20Sources/image/Memcached.jpg)
+![](https://github.com/steveLauwh/Memcached/raw/master/The%20Annotated%20Memcached%20Sources/image/Memcached.jpg)
 
 * [Linux 下安装 Memcached](https://github.com/steveLauwh/Memcached/blob/master/Linux%20%E4%B8%8B%20Memcached%20%E5%AE%89%E8%A3%85.md)
 
