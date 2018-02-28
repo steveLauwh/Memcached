@@ -1,6 +1,6 @@
-# Memcached-slabs 内存管理机制
+﻿# Memcached-slabs 内存管理机制
 
-[slabs.c 注解](https://github.com/steveLauwh/Database/blob/master/Memcached/memcached-1.5.4/slabs.c)
+[slabs.c 注解](https://github.com/steveLauwh/Memcached/tree/master/memcached-1.5.4/slabs.c)
 
 Memcached 声明一个 slabclass_t 结构体，如下：
 
@@ -64,3 +64,5 @@ Memcached 释放内存，并不是真正释放，将释放的 item用空闲链�
 用户需要预先分配一些内存，而不是等到客户端发送存储数据命令的时候才分配内存。
 
 预分配内存是对每个规格的 slabclass 进行分配一个内存页 slab(从 slabclass[0] 获取)；然后分别将内存页 slab 进行切分 N 个 chunk，用来存储 item。
+
+![](https://github.com/steveLauwh/Memcached/raw/master/The%20Annotated%20Memcached%20Sources/image/slab.PNG)
