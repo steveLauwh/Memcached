@@ -27,7 +27,8 @@
 #include "sasl_defs.h"
 
 /** Maximum length of a key. */
-#define KEY_MAX_LENGTH 250
+// key 的最大长度
+#define KEY_MAX_LENGTH 250 
 
 /** Size of an incr buf. */
 #define INCR_MAX_STORAGE_LEN 24
@@ -389,20 +390,20 @@ struct settings {
     bool relaxed_privileges;   /* Relax process restrictions when running testapp */
 };
 
-// 在.h 文件中extern，在.c 文件中包含这个.h 文件
+// 在 .h 文件中extern，在 .c 文件中包含这个.h 文件
 extern struct stats stats;
 extern struct stats_state stats_state;
 extern time_t process_started;
 extern struct settings settings;
 
-#define ITEM_LINKED 1   // item 插入到LRU 队列中
-#define ITEM_CAS 2     // item 使用了CAS
+#define ITEM_LINKED 1   // item 插入到 LRU 链表中
+#define ITEM_CAS 2     // item 使用了 CAS
 
 /* temp */
 #define ITEM_SLABBED 4  // item 在slab 的空闲链表中
 
 /* Item was fetched at least once in its lifetime */
-#define ITEM_FETCHED 8  // 该item 插入LRU 队列后，被worker 线程访问过
+#define ITEM_FETCHED 8  // 该 item 插入LRU 链表后，被 worker 线程访问过
 /* Appended on fetch, removed on LRU shuffling */
 #define ITEM_ACTIVE 16
 /* If an item's storage are chained chunks. */
@@ -415,28 +416,18 @@ extern struct settings settings;
 // item 实际存储数据的结构体
 typedef struct _stritem {
     /* Protected by LRU locks */
-	// 双向链表
-    struct _stritem *next; 
+    struct _stritem *next;       // 双向链表
     struct _stritem *prev;
     /* Rest are protected by an item lock */
-	// hash 表的冲突链
-    struct _stritem *h_next;    /* hash chain next */
-	// 最后一次访问时间
-    rel_time_t      time;       /* least recent access */
-	// 过期失效时间
-    rel_time_t      exptime;    /* expire time */
-	// 该item 存放的数据长度
-    int             nbytes;     /* size of data */
-	// 引用次数
-    unsigned short  refcount;
-	//后缀长度 
-    uint8_t         nsuffix;    /* length of flags-and-length string */
-	//item的属性
-    uint8_t         it_flags;   /* ITEM_* above */
-	// 该item 属于那个slab class
-    uint8_t         slabs_clsid;/* which slab class we're in */
-	// 键值的长度
-    uint8_t         nkey;       /* key length, w/terminating null and padding */
+    struct _stritem *h_next;    /* hash chain next */      // hash 表的冲突链
+    rel_time_t      time;       /* least recent access */       // 最后一次访问时间
+    rel_time_t      exptime;    /* expire time */   // 过期失效时间
+    int             nbytes;     /* size of data */     // 该item 存放的数据长度
+    unsigned short  refcount;  	// 引用次数
+    uint8_t         nsuffix;    /* length of flags-and-length string */ // 后缀长度 
+    uint8_t         it_flags;   /* ITEM_* above */  // item的属性
+    uint8_t         slabs_clsid;/* which slab class we're in */ // 该item 属于那个slab class
+    uint8_t         nkey;       /* key length, w/terminating null and padding */  // 键值的长度
     /* this odd type prevents type-punning issues when we do
      * the little shuffle to save space when not using CAS. */
     //真实的数据信息
@@ -455,6 +446,7 @@ enum crawler_run_type {
     CRAWLER_AUTOEXPIRE=0, CRAWLER_EXPIRED, CRAWLER_METADUMP
 };
 
+// LRU crawler 结构体
 typedef struct {
     struct _stritem *next;
     struct _stritem *prev;
@@ -473,6 +465,7 @@ typedef struct {
     uint64_t        checked;    /* items examined during this crawl. */
 } crawler;
 
+// chunk 结构体
 /* Header when an item is actually a chunk of another item. */
 typedef struct _strchunk {
     struct _strchunk *next;     /* points within its own chain. */
@@ -505,6 +498,7 @@ typedef struct {
 /**
  * The structure representing a connection into memcached.
  */
+// 连接结构体
 typedef struct conn conn;
 struct conn {
     int    sfd;
