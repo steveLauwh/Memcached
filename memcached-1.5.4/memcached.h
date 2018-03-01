@@ -24,11 +24,6 @@
 #include "cache.h"
 #include "logger.h"
 
-#ifdef EXTSTORE
-#include "extstore.h"
-#include "crc32c.h"
-#endif
-
 #include "sasl_defs.h"
 
 /** Maximum length of a key. */
@@ -159,6 +154,7 @@ typedef void (*ADD_STAT)(const char *key, const uint16_t klen,
 /**
  * Possible states of a connection.
  */
+// 连接状态信息
 enum conn_states {
     conn_listening,  /**< the socket which listens for connections */
     conn_new_cmd,    /**< Prepare connection for next command */
@@ -190,12 +186,14 @@ enum bin_substates {
     bin_reading_touch_key,
 };
 
+// 支持文本协议和二进制协议
 enum protocol {
     ascii_prot = 3, /* arbitrary value. */
     binary_prot,
     negotiating_prot /* Discovering the protocol */
 };
 
+// 本机/TCP/UDP
 enum network_transport {
     local_transport, /* Unix sockets*/
     tcp_transport,
@@ -271,14 +269,6 @@ struct slab_stats {
     X(auth_errors) \
     X(idle_kicks) /* idle connections killed */
 
-#ifdef EXTSTORE
-#define EXTSTORE_THREAD_STATS_FIELDS \
-    X(get_extstore) \
-    X(recache_from_extstore) \
-    X(miss_from_extstore) \
-    X(badcrc_from_extstore)
-#endif
-
 /**
  * Stats stored per-thread.
  */
@@ -286,9 +276,6 @@ struct thread_stats {
     pthread_mutex_t   mutex;
 #define X(name) uint64_t    name;
     THREAD_STATS_FIELDS
-#ifdef EXTSTORE
-    EXTSTORE_THREAD_STATS_FIELDS
-#endif
 #undef X
     struct slab_stats slab_stats[MAX_NUMBER_OF_SLAB_CLASSES];
     uint64_t lru_hits[POWER_LARGEST];
@@ -317,11 +304,6 @@ struct stats {
     uint64_t      log_worker_written; /* logs written by worker threads */
     uint64_t      log_watcher_skipped; /* logs watchers missed */
     uint64_t      log_watcher_sent; /* logs sent to watcher buffers */
-#ifdef EXTSTORE
-    uint64_t      extstore_compact_lost; /* items lost because they were locked */
-    uint64_t      extstore_compact_rescues; /* items re-written during compaction */
-    uint64_t      extstore_compact_skipped; /* unhit items skipped during compaction */
-#endif
     struct timeval maxconns_entered;  /* last time maxconns entered */
 };
 
@@ -405,68 +387,63 @@ struct settings {
     unsigned int logger_buf_size; /* size of per-thread logger buffer */
     bool drop_privileges;   /* Whether or not to drop unnecessary process privileges */
     bool relaxed_privileges;   /* Relax process restrictions when running testapp */
-#ifdef EXTSTORE
-    unsigned int ext_item_size; /* minimum size of items to store externally */
-    unsigned int ext_item_age; /* max age of tail item before storing ext. */
-    unsigned int ext_low_ttl; /* remaining TTL below this uses own pages */
-    unsigned int ext_recache_rate; /* counter++ % recache_rate == 0 > recache */
-    unsigned int ext_wbuf_size; /* read only note for the engine */
-    unsigned int ext_compact_under; /* when fewer than this many pages, compact */
-    unsigned int ext_drop_under; /* when fewer than this many pages, drop COLD items */
-    double ext_max_frag; /* ideal maximum page fragmentation */
-    double slab_automove_freeratio; /* % of memory to hold free as buffer */
-    bool ext_drop_unread; /* skip unread items during compaction */
-    /* per-slab-class free chunk limit */
-    unsigned int ext_free_memchunks[MAX_NUMBER_OF_SLAB_CLASSES];
-#endif
 };
 
+// 在.h 文件中extern，在.c 文件中包含这个.h 文件
 extern struct stats stats;
 extern struct stats_state stats_state;
 extern time_t process_started;
 extern struct settings settings;
 
-#define ITEM_LINKED 1
-#define ITEM_CAS 2
+#define ITEM_LINKED 1   // item 插入到LRU 队列中
+#define ITEM_CAS 2     // item 使用了CAS
 
 /* temp */
-#define ITEM_SLABBED 4
+#define ITEM_SLABBED 4  // item 在slab 的空闲链表中
 
 /* Item was fetched at least once in its lifetime */
-#define ITEM_FETCHED 8
+#define ITEM_FETCHED 8  // 该item 插入LRU 队列后，被worker 线程访问过
 /* Appended on fetch, removed on LRU shuffling */
 #define ITEM_ACTIVE 16
 /* If an item's storage are chained chunks. */
 #define ITEM_CHUNKED 32
 #define ITEM_CHUNK 64
-#ifdef EXTSTORE
-/* ITEM_data bulk is external to item */
-#define ITEM_HDR 128
-#endif
 
 /**
  * Structure for storing items within memcached.
  */
+// item 实际存储数据的结构体
 typedef struct _stritem {
     /* Protected by LRU locks */
-    struct _stritem *next;
+	// 双向链表
+    struct _stritem *next; 
     struct _stritem *prev;
     /* Rest are protected by an item lock */
+	// hash 表的冲突链
     struct _stritem *h_next;    /* hash chain next */
+	// 最后一次访问时间
     rel_time_t      time;       /* least recent access */
+	// 过期失效时间
     rel_time_t      exptime;    /* expire time */
+	// 该item 存放的数据长度
     int             nbytes;     /* size of data */
+	// 引用次数
     unsigned short  refcount;
+	//后缀长度 
     uint8_t         nsuffix;    /* length of flags-and-length string */
+	//item的属性
     uint8_t         it_flags;   /* ITEM_* above */
+	// 该item 属于那个slab class
     uint8_t         slabs_clsid;/* which slab class we're in */
+	// 键值的长度
     uint8_t         nkey;       /* key length, w/terminating null and padding */
     /* this odd type prevents type-punning issues when we do
      * the little shuffle to save space when not using CAS. */
+    //真实的数据信息
     union {
         uint64_t cas;
         char end;
-    } data[];
+    } data[];   
     /* if it_flags & ITEM_CAS we have 8 bytes CAS */
     /* then null-terminated key */
     /* then " flags length\r\n" (no terminating null) */
@@ -510,13 +487,8 @@ typedef struct _strchunk {
     uint8_t          slabs_clsid; /* Same as above. */
     char data[];
 } item_chunk;
-#ifdef EXTSTORE
-typedef struct {
-    unsigned int page_version; /* from IO header */
-    unsigned int offset; /* from IO header */
-    unsigned short page_id; /* from IO header */
-} item_hdr;
-#endif
+
+// 每个工作线程的数据结构
 typedef struct {
     pthread_t thread_id;        /* unique ID of this thread */
     struct event_base *base;    /* libevent handle this thread uses */
@@ -526,31 +498,14 @@ typedef struct {
     struct thread_stats stats;  /* Stats generated by this thread */
     struct conn_queue *new_conn_queue; /* queue of new connections to handle */
     cache_t *suffix_cache;      /* suffix cache */
-#ifdef EXTSTORE
-    cache_t *io_cache;          /* IO objects */
-    void *storage;              /* data object for storage system */
-#endif
     logger *l;                  /* logger buffer */
     void *lru_bump_buf;         /* async LRU bump buffer */
 } LIBEVENT_THREAD;
-typedef struct conn conn;
-#ifdef EXTSTORE
-typedef struct _io_wrap {
-    obj_io io;
-    struct _io_wrap *next;
-    conn *c;
-    item *hdr_it;             /* original header item. */
-    unsigned int iovec_start; /* start of the iovecs for this IO */
-    unsigned int iovec_count; /* total number of iovecs */
-    unsigned int iovec_data;  /* specific index of data iovec */
-    bool miss;                /* signal a miss to unlink hdr_it */
-    bool badcrc;              /* signal a crc failure */
-    bool active; // FIXME: canary for test. remove
-} io_wrap;
-#endif
+
 /**
  * The structure representing a connection into memcached.
  */
+typedef struct conn conn;
 struct conn {
     int    sfd;
     sasl_conn_t *sasl_conn;
@@ -611,12 +566,7 @@ struct conn {
     int    suffixsize;
     char   **suffixcurr;
     int    suffixleft;
-#ifdef EXTSTORE
-    int io_wrapleft;
-    unsigned int recache_counter;
-    io_wrap *io_wraplist; /* linked list of io_wraps */
-    bool io_queued; /* FIXME: debugging flag */
-#endif
+
     enum protocol protocol;   /* which protocol this connection speaks */
     enum network_transport transport; /* what transport is used by this connection */
 
@@ -672,9 +622,7 @@ struct slab_rebalance {
 };
 
 extern struct slab_rebalance slab_rebal;
-#ifdef EXTSTORE
-extern void *ext_storage;
-#endif
+
 /*
  * Functions
  */
