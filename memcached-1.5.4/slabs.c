@@ -1266,7 +1266,7 @@ int start_slab_maintenance_thread(void) {
 }
 
 /* The maintenance thread is on a sleep/loop cycle, so it should join after a
- * short wait */
+ * short wait */ 
 void stop_slab_maintenance_thread(void) {
     mutex_lock(&slabs_rebalance_lock);
     do_run_slab_thread = 0;
