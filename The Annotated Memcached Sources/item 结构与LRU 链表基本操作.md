@@ -56,6 +56,7 @@ item 结构的组成：item header 大小 + 存储数据大小
          + (item)->nsuffix + (item)->nbytes \
          + (((item)->it_flags & ITEM_CAS) ? sizeof(uint64_t) : 0))
 ```
+![](https://github.com/steveLauwh/Memcached/raw/master/The%20Annotated%20Memcached%20Sources/image/item.PNG)
 
 ## LRU 链表的基本操作
 
@@ -73,6 +74,8 @@ Memcached 设计两个指针数组：数组的索引 对应于 slabs_clsid
 
 * heads[i] 指向第 i 类 LRU 链表的第一个 item
 * tails[i] 指向第 i 类 LRU 链表的最后一个item
+
+![](https://github.com/steveLauwh/Memcached/blob/master/The%20Annotated%20Memcached%20Sources/image/LRU%20Linked%20List.PNG)
 
 ### 为什么 Memcached 设计两个指针数组，分别存储各个 LRU 链表的头部和尾部地址?
 
