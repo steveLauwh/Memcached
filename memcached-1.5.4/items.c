@@ -2,10 +2,6 @@
 #include "memcached.h"
 #include "bipbuffer.h"
 #include "slab_automove.h"
-#ifdef EXTSTORE
-#include "storage.h"
-#include "slab_automove_extstore.h"
-#endif
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/resource.h>
@@ -22,12 +18,16 @@
 #include <poll.h>
 
 /* Forward Declarations */
-static void item_link_q(item *it);
-static void item_unlink_q(item *it);
+static void item_link_q(item *it); // 将item 插入到LRU 链表
+static void item_unlink_q(item *it); // 将item 从LRU 链表中删除
 
+// 四种LRU 双向链表的类型
 static unsigned int lru_type_map[4] = {HOT_LRU, WARM_LRU, COLD_LRU, TEMP_LRU};
 
+// POWER_LARGEST 为256，实际为255
 #define LARGEST_ID POWER_LARGEST
+
+// items 统计
 typedef struct {
     uint64_t evicted;
     uint64_t evicted_nonzero;
@@ -51,11 +51,13 @@ typedef struct {
     rel_time_t evicted_time;
 } itemstats_t;
 
-static item *heads[LARGEST_ID];
-static item *tails[LARGEST_ID];
-static itemstats_t itemstats[LARGEST_ID];
-static unsigned int sizes[LARGEST_ID];
-static uint64_t sizes_bytes[LARGEST_ID];
+// 重要: LRU 链表使用头插法
+static item *heads[LARGEST_ID];  // 指向每一个LRU 链表的头
+static item *tails[LARGEST_ID];  // 指向每一个LRU 链表的尾
+
+static itemstats_t itemstats[LARGEST_ID]; // 每一个LRU 链表的item 信息统计
+static unsigned int sizes[LARGEST_ID]; // 每一个LRU 链表的item 个数
+static uint64_t sizes_bytes[LARGEST_ID]; // 每一个LRU 链表的所有item 大小
 static unsigned int *stats_sizes_hist = NULL;
 static uint64_t stats_sizes_cas_min = 0;
 static int stats_sizes_buckets = 0;
@@ -66,6 +68,7 @@ static pthread_mutex_t lru_maintainer_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t cas_id_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t stats_sizes_lock = PTHREAD_MUTEX_INITIALIZER;
 
+// item 统计清空
 void item_stats_reset(void) {
     int i;
     for (i = 0; i < LARGEST_ID; i++) {
@@ -76,9 +79,10 @@ void item_stats_reset(void) {
 }
 
 /* called with class lru lock held */
+// LRU 爬虫统计
 void do_item_stats_add_crawl(const int i, const uint64_t reclaimed,
         const uint64_t unfetched, const uint64_t checked) {
-    itemstats[i].crawler_reclaimed += reclaimed;
+    itemstats[i].crawler_reclaimed += reclaimed; 
     itemstats[i].expired_unfetched += unfetched;
     itemstats[i].crawler_items_checked += checked;
 }
@@ -107,6 +111,7 @@ static uint64_t lru_total_bumps_dropped(void);
 
 /* Get the next CAS id for a new item. */
 /* TODO: refactor some atomics for this. */
+// cas id
 uint64_t get_cas_id(void) {
     static uint64_t cas_id = 0;
     pthread_mutex_lock(&cas_id_lock);
@@ -115,12 +120,14 @@ uint64_t get_cas_id(void) {
     return next_id;
 }
 
+// 比较当前item 的时间与flush 清理缓存命令的时间
 int item_is_flushed(item *it) {
     rel_time_t oldest_live = settings.oldest_live;
     uint64_t cas = ITEM_get_cas(it);
     uint64_t oldest_cas = settings.oldest_cas;
     if (oldest_live == 0 || oldest_live > current_time)
         return 0;
+	// 该item 创建在flush 清理缓存命令之前，说明该item 已失效
     if ((it->time <= oldest_live)
             || (oldest_cas != 0 && cas != 0 && cas < oldest_cas)) {
         return 1;
@@ -128,6 +135,7 @@ int item_is_flushed(item *it) {
     return 0;
 }
 
+// 当前LRU 链表已有item 大小
 static unsigned int temp_lru_size(int slabs_clsid) {
     int id = CLEAR_LRU(slabs_clsid);
     id |= TEMP_LRU;
@@ -161,11 +169,13 @@ static unsigned int temp_lru_size(int slabs_clsid) {
  *
  * Returns the total size of the header.
  */
+// 计算存储一个item 的大小
 static size_t item_make_header(const uint8_t nkey, const unsigned int flags, const int nbytes,
                      char *suffix, uint8_t *nsuffix) {
     if (settings.inline_ascii_response) {
         /* suffix is defined at 40 chars elsewhere.. */
-        *nsuffix = (uint8_t) snprintf(suffix, 40, " %u %d\r\n", flags, nbytes - 2);
+		// nbytes 为value 大小加'\r\n'
+        *nsuffix = (uint8_t) snprintf(suffix, 40, " %u %d\r\n", flags, nbytes - 2); 
     } else {
         if (flags == 0) {
             *nsuffix = 0;
@@ -176,6 +186,7 @@ static size_t item_make_header(const uint8_t nkey, const unsigned int flags, con
     return sizeof(item) + nkey + *nsuffix + nbytes;
 }
 
+// 分配item 机制
 item *do_item_alloc_pull(const size_t ntotal, const unsigned int id) {
     item *it = NULL;
     int i;
@@ -185,18 +196,23 @@ item *do_item_alloc_pull(const size_t ntotal, const unsigned int id) {
      * occasional OOM's, rather than internally work around them.
      * This also gives one fewer code path for slab alloc/free
      */
+    // 为什么10 次循环?
     for (i = 0; i < 10; i++) {
         uint64_t total_bytes;
         /* Try to reclaim memory first */
-        if (!settings.lru_segmented) {
+		//默认settings.lru_segmented = true
+        if (!settings.lru_segmented) { 
             lru_pull_tail(id, COLD_LRU, 0, 0, 0, NULL);
         }
-        it = slabs_alloc(ntotal, id, &total_bytes, 0);
+        it = slabs_alloc(ntotal, id, &total_bytes, 0); // 分配item
 
+		// 默认settings.temp_lru = false
         if (settings.temp_lru)
             total_bytes -= temp_lru_size(id);
 
+		// 当slab 内存管理器分配item 失败
         if (it == NULL) {
+			//从该item 所属的LRU 链表尾部开始，进行LRU 淘汰
             if (lru_pull_tail(id, COLD_LRU, total_bytes, LRU_PULL_EVICT, 0, NULL) <= 0) {
                 if (settings.lru_segmented) {
                     lru_pull_tail(id, HOT_LRU, total_bytes, 0, 0, NULL);
@@ -205,7 +221,7 @@ item *do_item_alloc_pull(const size_t ntotal, const unsigned int id) {
                 }
             }
         } else {
-            break;
+            break;  // slab 内存管理器分配item 成功，直接跳出循环
         }
     }
 
@@ -249,20 +265,29 @@ item_chunk *do_item_alloc_chunk(item_chunk *ch, const size_t bytes_remain) {
     return nch;
 }
 
+/***
+* 函数功能: 分配一个item
+* key、flags、exptime 三个参数是用户在使用set、add 命令存储一条数据时输入的参数。  
+* nkey: key 字符串的长度
+* nbytes: 用户要存储的data 长度+2, 因为在data 的结尾处还要加上"\r\n"  
+* cur_hv: 根据键值key 计算得到的哈希值
+* **/
 item *do_item_alloc(char *key, const size_t nkey, const unsigned int flags,
                     const rel_time_t exptime, const int nbytes) {
     uint8_t nsuffix;
     item *it = NULL;
     char suffix[40];
-    // Avoid potential underflows.
-    if (nbytes < 2)
+    // Avoid potential underflows. 
+    if (nbytes < 2) // '\r\n'
         return 0;
 
+	// 计算要存储item 的大小
     size_t ntotal = item_make_header(nkey + 1, flags, nbytes, suffix, &nsuffix);
-    if (settings.use_cas) {
+    if (settings.use_cas) { // 开启CAS
         ntotal += sizeof(uint64_t);
     }
 
+	// 根据一个item 的大小来选择合适的slab class
     unsigned int id = slabs_clsid(ntotal);
     unsigned int hdr_id = 0;
     if (id == 0)
@@ -271,6 +296,7 @@ item *do_item_alloc(char *key, const size_t nkey, const unsigned int flags,
     /* This is a large item. Allocate a header object now, lazily allocate
      *  chunks while reading the upload.
      */
+    // 假设申请的item 大于chunk size(最大值为slab 内存页的一半)
     if (ntotal > settings.slab_chunk_size_max) {
         /* We still link this item into the LRU for the larger slab class, but
          * we're pulling a header from an entirely different slab class. The
@@ -286,7 +312,7 @@ item *do_item_alloc(char *key, const size_t nkey, const unsigned int flags,
         if (it != NULL)
             it->it_flags |= ITEM_CHUNKED;
     } else {
-        it = do_item_alloc_pull(ntotal, id);
+        it = do_item_alloc_pull(ntotal, id); // 重要
     }
 
     if (it == NULL) {
@@ -305,6 +331,7 @@ item *do_item_alloc(char *key, const size_t nkey, const unsigned int flags,
     /* Items are initially loaded into the HOT_LRU. This is '0' but I want at
      * least a note here. Compiler (hopefully?) optimizes this out.
      */
+    // 下面就是对item 结构体赋值
     if (settings.temp_lru &&
             exptime - current_time <= settings.temporary_ttl) {
         id |= TEMP_LRU;
@@ -345,6 +372,7 @@ item *do_item_alloc(char *key, const size_t nkey, const unsigned int flags,
     return it;
 }
 
+// 释放一个item，真正调用slabs_free
 void item_free(item *it) {
     size_t ntotal = ITEM_ntotal(it);
     unsigned int clsid;
@@ -363,6 +391,7 @@ void item_free(item *it) {
  * Returns true if an item will fit in the cache (its size does not exceed
  * the maximum for a cache entry.)
  */
+// 如果item 选中合适的slab class，返回true
 bool item_size_ok(const size_t nkey, const int flags, const int nbytes) {
     char prefix[40];
     uint8_t nsuffix;
@@ -378,33 +407,26 @@ bool item_size_ok(const size_t nkey, const int flags, const int nbytes) {
     return slabs_clsid(ntotal) != 0;
 }
 
+// 插入item 到LRU 链表，头插法
 static void do_item_link_q(item *it) { /* item is the new head */
     item **head, **tail;
-    assert((it->it_flags & ITEM_SLABBED) == 0);
+    assert((it->it_flags & ITEM_SLABBED) == 0); 
 
     head = &heads[it->slabs_clsid];
     tail = &tails[it->slabs_clsid];
     assert(it != *head);
     assert((*head && *tail) || (*head == 0 && *tail == 0));
-    it->prev = 0;
+    it->prev = 0; // 头插法
     it->next = *head;
     if (it->next) it->next->prev = it;
-    *head = it;
-    if (*tail == 0) *tail = it;
-    sizes[it->slabs_clsid]++;
-#ifdef EXTSTORE
-    if (it->it_flags & ITEM_HDR) {
-        sizes_bytes[it->slabs_clsid] += (ITEM_ntotal(it) - it->nbytes) + sizeof(item_hdr);
-    } else {
-        sizes_bytes[it->slabs_clsid] += ITEM_ntotal(it);
-    }
-#else
-    sizes_bytes[it->slabs_clsid] += ITEM_ntotal(it);
-#endif
-
+    *head = it; // new item 为对应LRU 链表的第一个节点
+    if (*tail == 0) *tail = it; // LRU 链表上只有一个new item ，所以尾指针也指向new item
+    sizes[it->slabs_clsid]++; // LRU 链表上的item 个数加1
+    sizes_bytes[it->slabs_clsid] += ITEM_ntotal(it); // LRU 链表上的增加新增item 大小
     return;
 }
 
+// 对item 操作，先对item 所属的slab class 上锁
 static void item_link_q(item *it) {
     pthread_mutex_lock(&lru_locks[it->slabs_clsid]);
     do_item_link_q(it);
@@ -418,6 +440,8 @@ static void item_link_q_warm(item *it) {
     pthread_mutex_unlock(&lru_locks[it->slabs_clsid]);
 }
 
+// 将item 从所属LRU 链表中删除
+// 链表操作O(1)
 static void do_item_unlink_q(item *it) {
     item **head, **tail;
     head = &heads[it->slabs_clsid];
@@ -437,28 +461,22 @@ static void do_item_unlink_q(item *it) {
     if (it->next) it->next->prev = it->prev;
     if (it->prev) it->prev->next = it->next;
     sizes[it->slabs_clsid]--;
-#ifdef EXTSTORE
-    if (it->it_flags & ITEM_HDR) {
-        sizes_bytes[it->slabs_clsid] -= (ITEM_ntotal(it) - it->nbytes) + sizeof(item_hdr);
-    } else {
-        sizes_bytes[it->slabs_clsid] -= ITEM_ntotal(it);
-    }
-#else
     sizes_bytes[it->slabs_clsid] -= ITEM_ntotal(it);
-#endif
-
     return;
 }
 
+// 删除item 前上锁
 static void item_unlink_q(item *it) {
     pthread_mutex_lock(&lru_locks[it->slabs_clsid]);
     do_item_unlink_q(it);
     pthread_mutex_unlock(&lru_locks[it->slabs_clsid]);
 }
 
+// 将item 插入哈希表和LRU 链表
+// hv 哈希值
 int do_item_link(item *it, const uint32_t hv) {
     MEMCACHED_ITEM_LINK(ITEM_key(it), it->nkey, it->nbytes);
-    assert((it->it_flags & (ITEM_LINKED|ITEM_SLABBED)) == 0);
+    assert((it->it_flags & (ITEM_LINKED|ITEM_SLABBED)) == 0); // item 已经分配，并没有插入到LRU 链表
     it->it_flags |= ITEM_LINKED;
     it->time = current_time;
 
@@ -469,15 +487,17 @@ int do_item_link(item *it, const uint32_t hv) {
     STATS_UNLOCK();
 
     /* Allocate a new CAS ID on link. */
+	// 为item 分配一个CAS ID
     ITEM_set_cas(it, (settings.use_cas) ? get_cas_id() : 0);
-    assoc_insert(it, hv);
-    item_link_q(it);
-    refcount_incr(it);
+    assoc_insert(it, hv); // 将item 插入哈希表
+    item_link_q(it); // 将item 插入到LRU 链表
+    refcount_incr(it); //引用计数加1  
     item_stats_sizes_add(it);
 
     return 1;
 }
 
+// 将item 从哈希表和LRU 链表中删除
 void do_item_unlink(item *it, const uint32_t hv) {
     MEMCACHED_ITEM_UNLINK(ITEM_key(it), it->nkey, it->nbytes);
     if ((it->it_flags & ITEM_LINKED) != 0) {
@@ -487,9 +507,9 @@ void do_item_unlink(item *it, const uint32_t hv) {
         stats_state.curr_items -= 1;
         STATS_UNLOCK();
         item_stats_sizes_remove(it);
-        assoc_delete(ITEM_key(it), it->nkey, hv);
-        item_unlink_q(it);
-        do_item_remove(it);
+        assoc_delete(ITEM_key(it), it->nkey, hv); // 将item 从哈希表删除
+        item_unlink_q(it); //从LRU 链表中删除该item  
+        do_item_remove(it); // item 引用计数为0，归还slab 空间链表
     }
 }
 
@@ -509,6 +529,8 @@ void do_item_unlink_nolock(item *it, const uint32_t hv) {
     }
 }
 
+// 当item 引用计数为0，将item 归还到空闲链表
+// 引用计数代表是否有worker 线程在使用这个item
 void do_item_remove(item *it) {
     MEMCACHED_ITEM_REMOVE(ITEM_key(it), it->nkey, it->nbytes);
     assert((it->it_flags & ITEM_SLABBED) == 0);
@@ -535,6 +557,7 @@ void do_item_update_nolock(item *it) {
 }
 
 /* Bump the last accessed time, or relink if we're in compat mode */
+// 更新item 操作
 void do_item_update(item *it) {
     MEMCACHED_ITEM_UPDATE(ITEM_key(it), it->nkey, it->nbytes);
 
@@ -553,17 +576,19 @@ void do_item_update(item *it) {
                 it->time = current_time;
             }
         }
-    } else if (it->time < current_time - ITEM_UPDATE_INTERVAL) {
+    } else if (it->time < current_time - ITEM_UPDATE_INTERVAL) { // 大于1分钟才更新item
         assert((it->it_flags & ITEM_SLABBED) == 0);
 
+		// item 在LRU 链表中，更新
         if ((it->it_flags & ITEM_LINKED) != 0) {
-            it->time = current_time;
-            item_unlink_q(it);
-            item_link_q(it);
+            it->time = current_time; // 更新访问时间
+            item_unlink_q(it); // 从LRU 链表中删除item
+            item_link_q(it); // 然后重新插入到LRU 链表
         }
     }
 }
 
+// 替换一个新的item
 int do_item_replace(item *it, item *new_it, const uint32_t hv) {
     MEMCACHED_ITEM_REPLACE(ITEM_key(it), it->nkey, it->nbytes,
                            ITEM_key(new_it), new_it->nkey, new_it->nbytes);
@@ -939,8 +964,9 @@ void item_stats_sizes(ADD_STAT add_stats, void *c) {
 }
 
 /** wrapper around assoc_find which does the lazy expiration logic */
+// LRU -懒惰删除: Memcached 并不主动去检查item 是否失效，而是客户端再次请求该item 才判断失效
 item *do_item_get(const char *key, const size_t nkey, const uint32_t hv, conn *c, const bool do_update) {
-    item *it = assoc_find(key, nkey, hv);
+    item *it = assoc_find(key, nkey, hv); // 在哈希表上查找item
     if (it != NULL) {
         refcount_incr(it);
         /* Optimization for slab reassignment. prevents popular items from
@@ -980,10 +1006,10 @@ item *do_item_get(const char *key, const size_t nkey, const uint32_t hv, conn *c
 
     if (it != NULL) {
         was_found = 1;
+        // 该item 已经被flush 清理
         if (item_is_flushed(it)) {
-            do_item_unlink(it, hv);
-            STORAGE_delete(c->thread->storage, it);
-            do_item_remove(it);
+            do_item_unlink(it, hv); // 在LRU 链表和哈希表上删除
+            do_item_remove(it); // slab 内存中删除item
             it = NULL;
             pthread_mutex_lock(&c->thread->stats.mutex);
             c->thread->stats.get_flushed++;
@@ -992,9 +1018,8 @@ item *do_item_get(const char *key, const size_t nkey, const uint32_t hv, conn *c
                 fprintf(stderr, " -nuked by flush");
             }
             was_found = 2;
-        } else if (it->exptime != 0 && it->exptime <= current_time) {
-            do_item_unlink(it, hv);
-            STORAGE_delete(c->thread->storage, it);
+        } else if (it->exptime != 0 && it->exptime <= current_time) { // 检查item 是否过期
+            do_item_unlink(it, hv); // item 过期，删除
             do_item_remove(it);
             it = NULL;
             pthread_mutex_lock(&c->thread->stats.mutex);
@@ -1044,6 +1069,7 @@ item *do_item_get(const char *key, const size_t nkey, const uint32_t hv, conn *c
     return it;
 }
 
+// 将该item 重新更新
 item *do_item_touch(const char *key, size_t nkey, uint32_t exptime,
                     const uint32_t hv, conn *c) {
     item *it = do_item_get(key, nkey, hv, c, DO_UPDATE);
@@ -1057,6 +1083,7 @@ item *do_item_touch(const char *key, size_t nkey, uint32_t exptime,
 
 /* Returns number of items remove, expired, or evicted.
  * Callable from worker threads or the LRU maintainer thread */
+// 从LRU 链表尾部开始搜索item
 int lru_pull_tail(const int orig_id, const int cur_lru,
         const uint64_t total_bytes, const uint8_t flags, const rel_time_t max_age,
         struct lru_pull_tail_return *ret_it) {
@@ -1066,7 +1093,7 @@ int lru_pull_tail(const int orig_id, const int cur_lru,
     if (id == 0)
         return 0;
 
-    int tries = 5;
+    int tries = 5; // 尝试5 次
     item *search;
     item *next_it;
     void *hold_lock = NULL;
@@ -1075,7 +1102,7 @@ int lru_pull_tail(const int orig_id, const int cur_lru,
 
     id |= cur_lru;
     pthread_mutex_lock(&lru_locks[id]);
-    search = tails[id];
+    search = tails[id];  // LRU 链表的尾部地址 
     /* We walk up *only* for locked items, and if bottom is expired. */
     for (; tries > 0 && search != NULL; tries--, search=next_it) {
         /* we might relink search mid-loop, so search->prev isn't reliable */
@@ -1089,12 +1116,14 @@ int lru_pull_tail(const int orig_id, const int cur_lru,
             tries++;
             continue;
         }
-        uint32_t hv = hash(ITEM_key(search), search->nkey);
+        uint32_t hv = hash(ITEM_key(search), search->nkey);  // 哈希值
         /* Attempt to hash item lock the "search" item. If locked, no
          * other callers can incr the refcount. Also skip ourselves. */
         if ((hold_lock = item_trylock(hv)) == NULL)
             continue;
         /* Now see if the item is refcount locked */
+		//一般情况下search->refcount为1，如果增加了refcount之后，不等于2，说明item被其它的worker线程锁定  
+        //refcount往上加1，是锁定当前的item，如果不等于2，说明锁定失败  
         if (refcount_incr(search) != 2) {
             /* Note pathological case with ref'ed items in tail.
              * Can still unlink the item, but it won't be reusable yet */
@@ -1106,7 +1135,6 @@ int lru_pull_tail(const int orig_id, const int cur_lru,
                 itemstats[id].tailrepairs++;
                 search->refcount = 1;
                 /* This will call item_remove -> item_free since refcnt is 1 */
-                STORAGE_delete(ext_storage, search);
                 do_item_unlink_nolock(search, hv);
                 item_trylock_unlock(hold_lock);
                 continue;
@@ -1114,15 +1142,15 @@ int lru_pull_tail(const int orig_id, const int cur_lru,
         }
 
         /* Expired or flushed */
+		// 如果该item 过期或者被flush 清理掉
         if ((search->exptime != 0 && search->exptime < current_time)
             || item_is_flushed(search)) {
-            itemstats[id].reclaimed++;
+            itemstats[id].reclaimed++; // 回收统计
             if ((search->it_flags & ITEM_FETCHED) == 0) {
                 itemstats[id].expired_unfetched++;
             }
             /* refcnt 2 -> 1 */
             do_item_unlink_nolock(search, hv);
-            STORAGE_delete(ext_storage, search);
             /* refcnt 1 -> 0 -> item_free */
             do_item_remove(search);
             item_trylock_unlock(hold_lock);
@@ -1172,13 +1200,16 @@ int lru_pull_tail(const int orig_id, const int cur_lru,
                 break;
             case COLD_LRU:
                 it = search; /* No matter what, we're stopping */
+				// flag = LRU_PULL_EVICT
+				// 如果遍历item 没有过期，执行LRU 淘汰
                 if (flags & LRU_PULL_EVICT) {
+					//如果设置了不允许LRU 淘汰，则返回ERROR  
                     if (settings.evict_to_free == 0) {
                         /* Don't think we need a counter for this. It'll OOM.  */
                         break;
                     }
                     itemstats[id].evicted++;
-                    itemstats[id].evicted_time = current_time - search->time;
+                    itemstats[id].evicted_time = current_time - search->time; // < 0  ??
                     if (search->exptime != 0)
                         itemstats[id].evicted_nonzero++;
                     if ((search->it_flags & ITEM_FETCHED) == 0) {
@@ -1188,8 +1219,7 @@ int lru_pull_tail(const int orig_id, const int cur_lru,
                         itemstats[id].evicted_active++;
                     }
                     LOGGER_LOG(NULL, LOG_EVICTIONS, LOGGER_EVICTION, search);
-                    STORAGE_delete(ext_storage, search);
-                    do_item_unlink_nolock(search, hv);
+                    do_item_unlink_nolock(search, hv);  // LRU 淘汰，就是回收内存
                     removed++;
                     if (settings.slab_automove == 2) {
                         slabs_reassign(-1, orig_id);
@@ -1220,8 +1250,8 @@ int lru_pull_tail(const int orig_id, const int cur_lru,
     if (it != NULL) {
         if (move_to_lru) {
             it->slabs_clsid = ITEM_clsid(it);
-            it->slabs_clsid |= move_to_lru;
-            item_link_q(it);
+            it->slabs_clsid |= move_to_lru; // slab_clsid 改变了
+            item_link_q(it); // 
         }
         if ((flags & LRU_PULL_RETURN_ITEM) == 0) {
             do_item_remove(it);
@@ -1229,7 +1259,7 @@ int lru_pull_tail(const int orig_id, const int cur_lru,
         }
     }
 
-    return removed;
+    return removed; // 返回回收item 的个数
 }
 
 
@@ -1510,31 +1540,12 @@ static void lru_maintainer_crawler_check(struct crawler_expired_data *cdata, log
     }
 }
 
-slab_automove_reg_t slab_automove_default = {
-    .init = slab_automove_init,
-    .free = slab_automove_free,
-    .run = slab_automove_run
-};
-#ifdef EXTSTORE
-slab_automove_reg_t slab_automove_extstore = {
-    .init = slab_automove_extstore_init,
-    .free = slab_automove_extstore_free,
-    .run = slab_automove_extstore_run
-};
-#endif
 static pthread_t lru_maintainer_tid;
 
 #define MAX_LRU_MAINTAINER_SLEEP 1000000
 #define MIN_LRU_MAINTAINER_SLEEP 1000
 
 static void *lru_maintainer_thread(void *arg) {
-    slab_automove_reg_t *sam = &slab_automove_default;
-#ifdef EXTSTORE
-    void *storage = arg;
-    if (storage != NULL)
-        sam = &slab_automove_extstore;
-    int x;
-#endif
     int i;
     useconds_t to_sleep = MIN_LRU_MAINTAINER_SLEEP;
     useconds_t last_sleep = MIN_LRU_MAINTAINER_SLEEP;
@@ -1557,7 +1568,8 @@ static void *lru_maintainer_thread(void *arg) {
     }
 
     double last_ratio = settings.slab_automove_ratio;
-    void *am = sam->init(&settings);
+    void *am = slab_automove_init(settings.slab_automove_window,
+            settings.slab_automove_ratio);
 
     pthread_mutex_lock(&lru_maintainer_lock);
     if (settings.verbose > 2)
@@ -1587,20 +1599,6 @@ static void *lru_maintainer_thread(void *arg) {
             }
 
             int did_moves = lru_maintainer_juggle(i);
-#ifdef EXTSTORE
-            // Deeper loop to speed up pushing to storage.
-            if (storage) {
-                for (x = 0; x < 500; x++) {
-                    int found;
-                    found = lru_maintainer_store(storage, i);
-                    if (found) {
-                        did_moves += found;
-                    } else {
-                        break;
-                    }
-                }
-            }
-#endif
             if (did_moves == 0) {
                 if (backoff_juggles[i] != 0) {
                     backoff_juggles[i] += backoff_juggles[i] / 8;
@@ -1633,12 +1631,13 @@ static void *lru_maintainer_thread(void *arg) {
 
         if (settings.slab_automove == 1 && last_automove_check != current_time) {
             if (last_ratio != settings.slab_automove_ratio) {
-                sam->free(am);
-                am = sam->init(&settings);
+                slab_automove_free(am);
+                am = slab_automove_init(settings.slab_automove_window,
+                        settings.slab_automove_ratio);
                 last_ratio = settings.slab_automove_ratio;
             }
             int src, dst;
-            sam->run(am, &src, &dst);
+            slab_automove_run(am, &src, &dst);
             if (src != -1 && dst != -1) {
                 slabs_reassign(src, dst);
                 LOGGER_LOG(l, LOG_SYSEVENTS, LOGGER_SLAB_MOVE, NULL,
@@ -1654,7 +1653,7 @@ static void *lru_maintainer_thread(void *arg) {
         }
     }
     pthread_mutex_unlock(&lru_maintainer_lock);
-    sam->free(am);
+    slab_automove_free(am);
     // LRU crawler *must* be stopped.
     free(cdata);
     if (settings.verbose > 2)
@@ -1704,6 +1703,8 @@ void lru_maintainer_resume(void) {
     pthread_mutex_unlock(&lru_maintainer_lock);
 }
 
+// LRU maintainer 初始化
+// lru_maintainer_lock 互斥锁初始化
 int init_lru_maintainer(void) {
     if (lru_maintainer_initialized == 0) {
         pthread_mutex_init(&lru_maintainer_lock, NULL);
