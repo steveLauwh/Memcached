@@ -18,13 +18,13 @@
 #include <poll.h>
 
 /* Forward Declarations */
-static void item_link_q(item *it); // 将item 插入到LRU 链表
-static void item_unlink_q(item *it); // 将item 从LRU 链表中删除
+static void item_link_q(item *it); // 将 item 插入到 LRU 链表
+static void item_unlink_q(item *it); // 将 item 从 LRU 链表中删除
 
-// 四种LRU 双向链表的类型
+// 四种 LRU 双向链表的类型
 static unsigned int lru_type_map[4] = {HOT_LRU, WARM_LRU, COLD_LRU, TEMP_LRU};
 
-// POWER_LARGEST 为256，实际为255
+// POWER_LARGEST 为 256，实际为 255
 #define LARGEST_ID POWER_LARGEST
 
 // items 统计
@@ -52,12 +52,12 @@ typedef struct {
 } itemstats_t;
 
 // 重要: LRU 链表使用头插法
-static item *heads[LARGEST_ID];  // 指向每一个LRU 链表的头
-static item *tails[LARGEST_ID];  // 指向每一个LRU 链表的尾
+static item *heads[LARGEST_ID];  // 指向每一个 LRU 链表的头
+static item *tails[LARGEST_ID];  // 指向每一个 LRU 链表的尾
 
-static itemstats_t itemstats[LARGEST_ID]; // 每一个LRU 链表的item 信息统计
-static unsigned int sizes[LARGEST_ID]; // 每一个LRU 链表的item 个数
-static uint64_t sizes_bytes[LARGEST_ID]; // 每一个LRU 链表的所有item 大小
+static itemstats_t itemstats[LARGEST_ID]; // 每一个 LRU 链表的 item 信息统计
+static unsigned int sizes[LARGEST_ID]; // 每一个 LRU 链表的 item 个数
+static uint64_t sizes_bytes[LARGEST_ID]; // 每一个 LRU 链表的所有 item 大小
 static unsigned int *stats_sizes_hist = NULL;
 static uint64_t stats_sizes_cas_min = 0;
 static int stats_sizes_buckets = 0;
@@ -120,14 +120,14 @@ uint64_t get_cas_id(void) {
     return next_id;
 }
 
-// 比较当前item 的时间与flush 清理缓存命令的时间
+// 比较当前 item 的时间与 flush 清理缓存命令的时间
 int item_is_flushed(item *it) {
     rel_time_t oldest_live = settings.oldest_live;
     uint64_t cas = ITEM_get_cas(it);
     uint64_t oldest_cas = settings.oldest_cas;
     if (oldest_live == 0 || oldest_live > current_time)
         return 0;
-	// 该item 创建在flush 清理缓存命令之前，说明该item 已失效
+	// 该 item 创建在 flush 清理缓存命令之前，说明该 item 已失效
     if ((it->time <= oldest_live)
             || (oldest_cas != 0 && cas != 0 && cas < oldest_cas)) {
         return 1;
@@ -135,7 +135,7 @@ int item_is_flushed(item *it) {
     return 0;
 }
 
-// 当前LRU 链表已有item 大小
+// 当前LRU 链表已有 item 大小
 static unsigned int temp_lru_size(int slabs_clsid) {
     int id = CLEAR_LRU(slabs_clsid);
     id |= TEMP_LRU;
@@ -169,7 +169,7 @@ static unsigned int temp_lru_size(int slabs_clsid) {
  *
  * Returns the total size of the header.
  */
-// 计算存储一个item 的大小
+// 计算存储一个 item 的大小
 static size_t item_make_header(const uint8_t nkey, const unsigned int flags, const int nbytes,
                      char *suffix, uint8_t *nsuffix) {
     if (settings.inline_ascii_response) {
@@ -186,7 +186,7 @@ static size_t item_make_header(const uint8_t nkey, const unsigned int flags, con
     return sizeof(item) + nkey + *nsuffix + nbytes;
 }
 
-// 分配item 机制
+// 分配 item 机制
 item *do_item_alloc_pull(const size_t ntotal, const unsigned int id) {
     item *it = NULL;
     int i;
@@ -196,23 +196,23 @@ item *do_item_alloc_pull(const size_t ntotal, const unsigned int id) {
      * occasional OOM's, rather than internally work around them.
      * This also gives one fewer code path for slab alloc/free
      */
-    // 为什么10 次循环?
+    // 为什么 10 次循环?
     for (i = 0; i < 10; i++) {
         uint64_t total_bytes;
         /* Try to reclaim memory first */
-		//默认settings.lru_segmented = true
+	// 默认settings.lru_segmented = true
         if (!settings.lru_segmented) { 
             lru_pull_tail(id, COLD_LRU, 0, 0, 0, NULL);
         }
         it = slabs_alloc(ntotal, id, &total_bytes, 0); // 分配item
 
-		// 默认settings.temp_lru = false
+	// 默认settings.temp_lru = false
         if (settings.temp_lru)
             total_bytes -= temp_lru_size(id);
 
-		// 当slab 内存管理器分配item 失败
+	// 当slab 内存管理器分配 item 失败
         if (it == NULL) {
-			//从该item 所属的LRU 链表尾部开始，进行LRU 淘汰
+	    // 从该 item 所属的 LRU 链表尾部开始，进行 LRU 淘汰
             if (lru_pull_tail(id, COLD_LRU, total_bytes, LRU_PULL_EVICT, 0, NULL) <= 0) {
                 if (settings.lru_segmented) {
                     lru_pull_tail(id, HOT_LRU, total_bytes, 0, 0, NULL);
@@ -221,7 +221,7 @@ item *do_item_alloc_pull(const size_t ntotal, const unsigned int id) {
                 }
             }
         } else {
-            break;  // slab 内存管理器分配item 成功，直接跳出循环
+            break;  // slab 内存管理器分配 item 成功，直接跳出循环
         }
     }
 
@@ -281,13 +281,13 @@ item *do_item_alloc(char *key, const size_t nkey, const unsigned int flags,
     if (nbytes < 2) // '\r\n'
         return 0;
 
-	// 计算要存储item 的大小
+    // 计算要存储item 的大小
     size_t ntotal = item_make_header(nkey + 1, flags, nbytes, suffix, &nsuffix);
-    if (settings.use_cas) { // 开启CAS
+    if (settings.use_cas) { // 开启 CAS
         ntotal += sizeof(uint64_t);
     }
 
-	// 根据一个item 的大小来选择合适的slab class
+    // 根据一个 item 的大小来选择合适的 slab class
     unsigned int id = slabs_clsid(ntotal);
     unsigned int hdr_id = 0;
     if (id == 0)
@@ -296,7 +296,7 @@ item *do_item_alloc(char *key, const size_t nkey, const unsigned int flags,
     /* This is a large item. Allocate a header object now, lazily allocate
      *  chunks while reading the upload.
      */
-    // 假设申请的item 大于chunk size(最大值为slab 内存页的一半)
+    // 假设申请的 item 大于chunk size(最大值为slab 内存页的一半)
     if (ntotal > settings.slab_chunk_size_max) {
         /* We still link this item into the LRU for the larger slab class, but
          * we're pulling a header from an entirely different slab class. The
@@ -487,11 +487,11 @@ int do_item_link(item *it, const uint32_t hv) {
     STATS_UNLOCK();
 
     /* Allocate a new CAS ID on link. */
-	// 为item 分配一个CAS ID
+    // 为item 分配一个CAS ID
     ITEM_set_cas(it, (settings.use_cas) ? get_cas_id() : 0);
     assoc_insert(it, hv); // 将item 插入哈希表
     item_link_q(it); // 将item 插入到LRU 链表
-    refcount_incr(it); //引用计数加1  
+    refcount_incr(it); // 引用计数加1  
     item_stats_sizes_add(it);
 
     return 1;
@@ -1122,7 +1122,7 @@ int lru_pull_tail(const int orig_id, const int cur_lru,
         if ((hold_lock = item_trylock(hv)) == NULL)
             continue;
         /* Now see if the item is refcount locked */
-		//一般情况下search->refcount为1，如果增加了refcount之后，不等于2，说明item被其它的worker线程锁定  
+	//一般情况下search->refcount为1，如果增加了refcount之后，不等于2，说明item被其它的worker线程锁定  
         //refcount往上加1，是锁定当前的item，如果不等于2，说明锁定失败  
         if (refcount_incr(search) != 2) {
             /* Note pathological case with ref'ed items in tail.
@@ -1142,7 +1142,7 @@ int lru_pull_tail(const int orig_id, const int cur_lru,
         }
 
         /* Expired or flushed */
-		// 如果该item 过期或者被flush 清理掉
+	// 如果该item 过期或者被flush 清理掉
         if ((search->exptime != 0 && search->exptime < current_time)
             || item_is_flushed(search)) {
             itemstats[id].reclaimed++; // 回收统计
