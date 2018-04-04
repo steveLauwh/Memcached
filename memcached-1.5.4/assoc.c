@@ -10,7 +10,7 @@
  *
  * The rest of the file is licensed under the BSD license.  See LICENSE.
  */
-// ÊµÏÖ Hash table µÄ²Ù×÷
+// å®ç° Hash table çš„æ“ä½œ
 #include "memcached.h"
 #include <sys/stat.h>
 #include <sys/socket.h>
@@ -25,7 +25,7 @@
 #include <assert.h>
 #include <pthread.h>
 
-// ¾²Ì¬³õÊ¼»¯
+// é™æ€åˆå§‹åŒ–
 static pthread_cond_t maintenance_cond = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t maintenance_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t hash_items_counter_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -34,12 +34,12 @@ typedef  unsigned long  int  ub4;   /* unsigned 4-byte quantities */
 typedef  unsigned       char ub1;   /* unsigned 1-byte quantities */
 
 /* how many powers of 2's worth of buckets we use */
-unsigned int hashpower = HASHPOWER_DEFAULT; // Ä¬ÈÏÃİÎª16
+unsigned int hashpower = HASHPOWER_DEFAULT; // é»˜è®¤å¹‚ä¸º 16
 
-#define hashsize(n) ((ub4)1<<(n)) // ×óÒÆ¶¯n Î»
-#define hashmask(n) (hashsize(n)-1) // ¹şÏ£ÑÚÂë
+#define hashsize(n) ((ub4)1<<(n)) // å·¦ç§»åŠ¨ n ä½
+#define hashmask(n) (hashsize(n)-1) // å“ˆå¸Œæ•°ç»„å¤§å°
 
-// ¹şÏ£±íÊÇÒ»Î¬Ö¸ÕëÊı×é£¬Êı×éµÄÃ¿Ò»¸öÔªËØÖ¸ÏòÒ»ÌõÁ´±í(Á´±íÉÏµÄitem½Úµã¾ßÓĞÏàÍ¬µÄ¹şÏ£Öµ)¡£
+// å“ˆå¸Œè¡¨æ˜¯ä¸€ç»´æŒ‡é’ˆæ•°ç»„ï¼Œæ•°ç»„çš„æ¯ä¸€ä¸ªå…ƒç´ æŒ‡å‘ä¸€æ¡é“¾è¡¨(é“¾è¡¨ä¸Šçš„itemèŠ‚ç‚¹å…·æœ‰ç›¸åŒçš„å“ˆå¸Œå€¼)ã€‚
 /* Main hash table. This is where we look except during expansion. */
 static item** primary_hashtable = 0;
 
@@ -62,25 +62,25 @@ static bool started_expanding = false;
  */
 static unsigned int expand_bucket = 0;
 
-// ³õÊ¼»¯ Hash table£¬¹şÏ£±íµÄ³¤¶È
+// åˆå§‹åŒ– Hash tableï¼Œå“ˆå¸Œè¡¨çš„é•¿åº¦
 void assoc_init(const int hashtable_init) {
     if (hashtable_init) {
         hashpower = hashtable_init;
     }
-	// ÉêÇë¹şÏ£±í¿Õ¼ä
+	// ç”³è¯·å“ˆå¸Œè¡¨ç©ºé—´
     primary_hashtable = calloc(hashsize(hashpower), sizeof(void *));
     if (! primary_hashtable) {
         fprintf(stderr, "Failed to init hashtable.\n");
         exit(EXIT_FAILURE);
     }
-	// Í³¼Æ
+	// ç»Ÿè®¡
     STATS_LOCK();
     stats_state.hash_power_level = hashpower;
     stats_state.hash_bytes = hashsize(hashpower) * sizeof(void *);
     STATS_UNLOCK();
 }
 
-// ²éÕÒ item£¬hv & hashmask(hashpower) ¶ÔÇóÓà·¨µÄÓÅ»¯
+// æŸ¥æ‰¾ itemï¼Œhv & hashmask(hashpower) å¯¹æ±‚ä½™æ³•çš„ä¼˜åŒ–
 item *assoc_find(const char *key, const size_t nkey, const uint32_t hv) {
     item *it;
     unsigned int oldbucket;
@@ -90,12 +90,12 @@ item *assoc_find(const char *key, const size_t nkey, const uint32_t hv) {
     {
         it = old_hashtable[oldbucket];
     } else {
-        it = primary_hashtable[hv & hashmask(hashpower)]; // ¸ù¾İ hv ¹şÏ£ÖµÅĞ¶Ï key ÊôÓÚÄÄ¸ö bucket(Í°)
+        it = primary_hashtable[hv & hashmask(hashpower)]; // æ ¹æ® hv å“ˆå¸Œå€¼åˆ¤æ–­ key å±äºå“ªä¸ª bucket(æ¡¶)
     }
 
     item *ret = NULL;
     int depth = 0;
-	// À­Á´·¨£¬Ò»Ò»±È½Ï
+    // æ‹‰é“¾æ³•ï¼Œä¸€ä¸€æ¯”è¾ƒ
     while (it) {
         if ((nkey == it->nkey) && (memcmp(key, ITEM_key(it), nkey) == 0)) {
             ret = it;
@@ -110,7 +110,7 @@ item *assoc_find(const char *key, const size_t nkey, const uint32_t hv) {
 
 /* returns the address of the item pointer before the key.  if *item == 0,
    the item wasn't found */
-// ·µ»ØÇ°Çı½ÚµãµÄ h_next ³ÉÔ±µØÖ·
+// è¿”å›å‰é©±èŠ‚ç‚¹çš„ h_next æˆå‘˜åœ°å€
 static item** _hashitem_before (const char *key, const size_t nkey, const uint32_t hv) {
     item **pos;
     unsigned int oldbucket;
@@ -120,10 +120,10 @@ static item** _hashitem_before (const char *key, const size_t nkey, const uint32
     {
         pos = &old_hashtable[oldbucket];
     } else {
-        pos = &primary_hashtable[hv & hashmask(hashpower)]; // ÕÒµ½¹şÏ£±íÖĞ¶ÔÓ¦µÄÍ°Î»ÖÃ
+        pos = &primary_hashtable[hv & hashmask(hashpower)]; // æ‰¾åˆ°å“ˆå¸Œè¡¨ä¸­å¯¹åº”çš„æ¡¶ä½ç½®
     }
 
-	// ±éÀú
+    // éå†
     while (*pos && ((nkey != (*pos)->nkey) || memcmp(key, ITEM_key(*pos), nkey))) {
         pos = &(*pos)->h_next;
     }
@@ -131,7 +131,7 @@ static item** _hashitem_before (const char *key, const size_t nkey, const uint32
 }
 
 /* grows the hashtable to the next power of 2. */
-// ÉêÇë 2 ±¶³¤¶ÈµÄ¹şÏ£±í
+// ç”³è¯· 2 å€é•¿åº¦çš„å“ˆå¸Œè¡¨
 static void assoc_expand(void) {
     old_hashtable = primary_hashtable;
 
@@ -153,17 +153,17 @@ static void assoc_expand(void) {
     }
 }
 
-// ¿ªÆô¹şÏ£±íÀ©Èİ
+// å¼€å¯å“ˆå¸Œè¡¨æ‰©å®¹
 static void assoc_start_expand(void) {
     if (started_expanding)
         return;
 
     started_expanding = true;
-    pthread_cond_signal(&maintenance_cond); // »½ĞÑÀ©ÈİÏß³Ì
+    pthread_cond_signal(&maintenance_cond); // å”¤é†’æ‰©å®¹çº¿ç¨‹
 }
 
 /* Note: this isn't an assoc_update.  The key must not already exist to call this */
-// ²åÈë item£¬hv ÊÇ¹şÏ£Öµ
+// æ’å…¥ itemï¼Œhv æ˜¯å“ˆå¸Œå€¼
 int assoc_insert(item *it, const uint32_t hv) {
     unsigned int oldbucket;
 
@@ -175,7 +175,7 @@ int assoc_insert(item *it, const uint32_t hv) {
         it->h_next = old_hashtable[oldbucket];
         old_hashtable[oldbucket] = it;
     } else {
-        it->h_next = primary_hashtable[hv & hashmask(hashpower)]; // Í·²å·¨
+        it->h_next = primary_hashtable[hv & hashmask(hashpower)]; // å¤´æ’æ³•
         primary_hashtable[hv & hashmask(hashpower)] = it;
     }
 
@@ -183,7 +183,7 @@ int assoc_insert(item *it, const uint32_t hv) {
     hash_items++;
     if (! expanding && hash_items > (hashsize(hashpower) * 3) / 2 &&
           hashpower < HASHPOWER_MAX) {
-        assoc_start_expand(); // À©Èİ
+        assoc_start_expand(); // æ‰©å®¹
     }
     pthread_mutex_unlock(&hash_items_counter_lock);
 
@@ -191,11 +191,11 @@ int assoc_insert(item *it, const uint32_t hv) {
     return 1;
 }
 
-// É¾³ı item
+// åˆ é™¤ item
 void assoc_delete(const char *key, const size_t nkey, const uint32_t hv) {
-    item **before = _hashitem_before(key, nkey, hv); // ÕÒµ½ÒªÉ¾³ı item µÄÇ°Çı½ÚµãµÄ h_next ³ÉÔ±µØÖ· 
+    item **before = _hashitem_before(key, nkey, hv); // æ‰¾åˆ°è¦åˆ é™¤ item çš„å‰é©±èŠ‚ç‚¹çš„ h_next æˆå‘˜åœ°å€ 
 
-    if (*before) { // ²éÕÒ³É¹¦
+    if (*before) { // æŸ¥æ‰¾æˆåŠŸ
         item *nxt;
         pthread_mutex_lock(&hash_items_counter_lock);
         hash_items--;
@@ -204,7 +204,7 @@ void assoc_delete(const char *key, const size_t nkey, const uint32_t hv) {
          * due to possible tail-optimization by the compiler
          */
         MEMCACHED_ASSOC_DELETE(key, nkey, hash_items);
-		// Èı²½É¾³ı²Ù×÷
+	// ä¸‰æ­¥åˆ é™¤æ“ä½œ
         nxt = (*before)->h_next;
         (*before)->h_next = 0;   /* probably pointless, but whatever. */
         *before = nxt;
@@ -221,17 +221,17 @@ static volatile int do_run_maintenance_thread = 1;
 #define DEFAULT_HASH_BULK_MOVE 1
 int hash_bulk_move = DEFAULT_HASH_BULK_MOVE;
 
-// À©ÈİÏß³Ì
-// ¹şÏ£±íµÄ³¤¶È¸Ä±ä£¬Ô­ÓĞµÄ item ¹şÏ£ºóÎ»ÖÃÒ²»á¸Ä±ä£¬ĞèÒªÖØĞÂ¼ÆËãÔ­ÓĞ item µÄ¹şÏ£Î»ÖÃ
+// æ‰©å®¹çº¿ç¨‹
+// å“ˆå¸Œè¡¨çš„é•¿åº¦æ”¹å˜ï¼ŒåŸæœ‰çš„ item å“ˆå¸Œåä½ç½®ä¹Ÿä¼šæ”¹å˜ï¼Œéœ€è¦é‡æ–°è®¡ç®—åŸæœ‰ item çš„å“ˆå¸Œä½ç½®
 static void *assoc_maintenance_thread(void *arg) {
 
-	// Êı¾İÇ¨ÒÆÇ°¶ÔÏß³ÌÉÏËø
+    // æ•°æ®è¿ç§»å‰å¯¹çº¿ç¨‹ä¸Šé”
     mutex_lock(&maintenance_lock);
     while (do_run_maintenance_thread) {
         int ii = 0;
 
         /* There is only one expansion thread, so no need to global lock. */
-		// hash_bulk_move ÓÃÀ´¿ØÖÆÃ¿´ÎÇ¨ÒÆ£¬ÒÆ¶¯¶àÉÙ¸öÍ°µÄitem£¬Ä¬ÈÏÊÇÒ»¸ö
+	// hash_bulk_move ç”¨æ¥æ§åˆ¶æ¯æ¬¡è¿ç§»ï¼Œç§»åŠ¨å¤šå°‘ä¸ªæ¡¶çš„itemï¼Œé»˜è®¤æ˜¯ä¸€ä¸ª
         for (ii = 0; ii < hash_bulk_move && expanding; ++ii) {
             item *it, *next;
             unsigned int bucket;
@@ -242,7 +242,7 @@ static void *assoc_maintenance_thread(void *arg) {
              *  also the lowest M bits of hv, and N is greater than M.
              *  So we can process expanding with only one item_lock. cool! */
             if ((item_lock = item_trylock(expand_bucket))) {
-					// Ç¨ÒÆµ½ĞÂµÄ¹şÏ£±íÖĞ
+		    // è¿ç§»åˆ°æ–°çš„å“ˆå¸Œè¡¨ä¸­
                     for (it = old_hashtable[expand_bucket]; NULL != it; it = next) {
                         next = it->h_next;
                         bucket = hash(ITEM_key(it), it->nkey) & hashmask(hashpower);
@@ -253,7 +253,7 @@ static void *assoc_maintenance_thread(void *arg) {
                     old_hashtable[expand_bucket] = NULL;
 
                     expand_bucket++;
-					//È«²¿Êı¾İÇ¨ÒÆÍê±Ï  
+		    //å…¨éƒ¨æ•°æ®è¿ç§»å®Œæ¯•  
                     if (expand_bucket == hashsize(hashpower - 1)) {
                         expanding = false;
                         free(old_hashtable);
@@ -275,11 +275,11 @@ static void *assoc_maintenance_thread(void *arg) {
             }
         }
 
-		// ²»ĞèÒªÀ©Èİ¹şÏ£±í
+	// ä¸éœ€è¦æ‰©å®¹å“ˆå¸Œè¡¨
         if (!expanding) {
             /* We are done expanding.. just wait for next invocation */
             started_expanding = false;
-            pthread_cond_wait(&maintenance_cond, &maintenance_lock); // ¹ÒÆğÀ©ÈİÏß³Ì
+            pthread_cond_wait(&maintenance_cond, &maintenance_lock); // æŒ‚èµ·æ‰©å®¹çº¿ç¨‹
             /* assoc_expand() swaps out the hash table entirely, so we need
              * all threads to not hold any references related to the hash
              * table while this happens.
@@ -288,7 +288,7 @@ static void *assoc_maintenance_thread(void *arg) {
              * wait times.
              */
             pause_threads(PAUSE_ALL_THREADS);
-            assoc_expand(); // ÉêÇë¸ü´óµÄ¹şÏ£±í
+            assoc_expand(); // ç”³è¯·æ›´å¤§çš„å“ˆå¸Œè¡¨
             pause_threads(RESUME_ALL_THREADS);
         }
     }
@@ -297,7 +297,7 @@ static void *assoc_maintenance_thread(void *arg) {
 
 static pthread_t maintenance_tid;
 
-// ´´½¨À©ÈİÏß³Ì
+// åˆ›å»ºæ‰©å®¹çº¿ç¨‹
 int start_assoc_maintenance_thread() {
     int ret;
     char *env = getenv("MEMCACHED_HASH_BULK_MOVE");
@@ -308,6 +308,7 @@ int start_assoc_maintenance_thread() {
         }
     }
     pthread_mutex_init(&maintenance_lock, NULL);
+    // åˆ›å»ºæ‰©å®¹çº¿ç¨‹
     if ((ret = pthread_create(&maintenance_tid, NULL,
                               assoc_maintenance_thread, NULL)) != 0) {
         fprintf(stderr, "Can't create thread: %s\n", strerror(ret));
@@ -316,7 +317,7 @@ int start_assoc_maintenance_thread() {
     return 0;
 }
 
-// Í£Ö¹À©ÈİÏß³Ì
+// æ‰©å®¹çº¿ç¨‹ç»ˆæ­¢
 void stop_assoc_maintenance_thread() {
     mutex_lock(&maintenance_lock);
     do_run_maintenance_thread = 0;
@@ -324,6 +325,6 @@ void stop_assoc_maintenance_thread() {
     mutex_unlock(&maintenance_lock);
 
     /* Wait for the maintenance thread to stop */
-    pthread_join(maintenance_tid, NULL);
+    pthread_join(maintenance_tid, NULL); // ç­‰å¾…æ‰©å®¹çº¿ç¨‹ç»ˆæ­¢
 }
 
