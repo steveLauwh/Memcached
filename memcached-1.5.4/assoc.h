@@ -1,6 +1,6 @@
-// assoc.h 哈希表头文件
+// assoc.h 鍝堝笇琛ㄥご鏂囦欢
 
-/* associative array 关联数组(key, value)*/
+/* associative array 鍏宠仈鏁扮粍(key, value)*/
 void assoc_init(const int hashpower_init);
 item *assoc_find(const char *key, const size_t nkey, const uint32_t hv);
 int assoc_insert(item *item, const uint32_t hv);
