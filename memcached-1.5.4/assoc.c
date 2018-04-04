@@ -67,13 +67,13 @@ void assoc_init(const int hashtable_init) {
     if (hashtable_init) {
         hashpower = hashtable_init;
     }
-	// 申请哈希表空间
+    // 申请哈希表空间
     primary_hashtable = calloc(hashsize(hashpower), sizeof(void *));
     if (! primary_hashtable) {
         fprintf(stderr, "Failed to init hashtable.\n");
         exit(EXIT_FAILURE);
     }
-	// 统计
+    // 统计
     STATS_LOCK();
     stats_state.hash_power_level = hashpower;
     stats_state.hash_bytes = hashsize(hashpower) * sizeof(void *);
@@ -253,7 +253,7 @@ static void *assoc_maintenance_thread(void *arg) {
                     old_hashtable[expand_bucket] = NULL;
 
                     expand_bucket++;
-		    //全部数据迁移完毕  
+		    // 全部数据迁移完毕  
                     if (expand_bucket == hashsize(hashpower - 1)) {
                         expanding = false;
                         free(old_hashtable);
