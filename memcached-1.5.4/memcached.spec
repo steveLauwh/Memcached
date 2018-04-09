@@ -1,3 +1,4 @@
+# 制作 RPM 软件包，编写 spec 软件包描述文件
 Name:           memcached
 Version:        1.5.4
 Release:        1%{?dist}
