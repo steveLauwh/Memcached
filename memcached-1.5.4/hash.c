@@ -9,13 +9,13 @@ int hash_init(enum hashfunc_type type) {
     switch(type) {
         case JENKINS_HASH:
             hash = jenkins_hash;
-            settings.hash_algorithm = "jenkins";
+            settings.hash_algorithm = "jenkins"; // jenkins_hash
             break;
         case MURMUR3_HASH:
             hash = MurmurHash3_x86_32;
-            settings.hash_algorithm = "murmur3";
+            settings.hash_algorithm = "murmur3"; // murmur3_hash
             break;
-        default:
+        default: 
             return -1;
     }
     return 0;
