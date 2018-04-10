@@ -1,13 +1,19 @@
+# 表示指定要生成的可执行应用程序文件，这表示可执行文件在安装时需要被安装到系统中。
+# PROGRAMS 知道这是一个可执行文件。
+# client 表示编译的目标文件。
+# bin 表示目录文件被安装到系统的目录。
 bin_PROGRAMS = memcached
 pkginclude_HEADERS = protocol_binary.h
 noinst_PROGRAMS = memcached-debug sizes testapp timedrun
 
+# 表示指定要生成的可执行应用程序文件，只是想编译，不想被安装到系统中
 BUILT_SOURCES=
 
 testapp_SOURCES = testapp.c util.c util.h
 
 timedrun_SOURCES = timedrun.c
 
+# 表示生成可执行应用程序所用的源文件，其中 main() 函数在 memcached.c 中
 memcached_SOURCES = memcached.c memcached.h \
                     hash.c hash.h \
                     jenkins_hash.c jenkins_hash.h \
