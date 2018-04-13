@@ -30,7 +30,7 @@
 /* Define this if you have an implementation of drop_worker_privileges() */
 #undef HAVE_DROP_WORKER_PRIVILEGES
 
-/* GCC 64bit Atomics available */
+/* GCC 64bit Atomics available */ 
 #undef HAVE_GCC_64ATOMICS
 
 /* GCC Atomics available */
