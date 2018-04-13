@@ -32,7 +32,7 @@ am__make_running_with_option = \
       ?) ;; \
       *) echo "am__make_running_with_option: internal error: invalid" \
               "target option '$${target_option-}' specified" >&2; \
-         exit 1;; \
+         exit 1;; \ 
   esac; \
   has_opt=no; \
   sane_makeflags=$$MAKEFLAGS; \
