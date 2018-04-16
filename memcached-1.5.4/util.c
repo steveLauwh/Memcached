@@ -78,6 +78,7 @@ bool safe_strtoull(const char *str, uint64_t *out) {
     return false;
 }
 
+// Convert string to long long integer
 bool safe_strtoll(const char *str, int64_t *out) {
     assert(out != NULL);
     errno = 0;
@@ -95,6 +96,7 @@ bool safe_strtoll(const char *str, int64_t *out) {
     return false;
 }
 
+// Convert string to long integer
 bool safe_strtoul(const char *str, uint32_t *out) {
     char *endptr = NULL;
     unsigned long l = 0;
@@ -124,6 +126,7 @@ bool safe_strtoul(const char *str, uint32_t *out) {
     return false;
 }
 
+// Convert string to long long integer
 bool safe_strtol(const char *str, int32_t *out) {
     assert(out != NULL);
     errno = 0;
@@ -141,6 +144,7 @@ bool safe_strtol(const char *str, int32_t *out) {
     return false;
 }
 
+// Convert string to double integer
 bool safe_strtod(const char *str, double *out) {
     assert(out != NULL);
     errno = 0;
@@ -158,6 +162,7 @@ bool safe_strtod(const char *str, double *out) {
     return false;
 }
 
+// 将函数发生错误的原因输出到标准设备(stderr)
 void vperror(const char *fmt, ...) {
     int old_errno = errno;
     char buf[1024];
