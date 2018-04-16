@@ -11,6 +11,7 @@ bool uriencode(const char *src, char *dst, const size_t srclen, const size_t dst
  *
  * returns true if conversion succeeded.
  */
+// 包裹函数
 bool safe_strtoull(const char *str, uint64_t *out);
 bool safe_strtoll(const char *str, int64_t *out);
 bool safe_strtoul(const char *str, uint32_t *out);
