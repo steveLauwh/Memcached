@@ -11,13 +11,17 @@
 static char *uriencode_map[256];
 static char uriencode_str[768];
 
+// uri(统一资源标识符) 编码初始化
 void uriencode_init(void) {
     int x;
     char *str = uriencode_str;
     for (x = 0; x < 256; x++) {
+        // 英文字母或数字，或特殊字符
         if (isalnum(x) || x == '-' || x == '.' || x == '_' || x == '~') {
             uriencode_map[x] = NULL;
         } else {
+            // "%02x"，是以 0 补齐 2 位数，如果超过 2 位就显示实际的数
+            // "%hhx"，是只输出 2 位数，即便超了，也只显示低两位
             snprintf(str, 4, "%%%02hhX", (unsigned char)x);
             uriencode_map[x] = str;
             str += 3; /* lobbing off the \0 is fine */
@@ -25,6 +29,7 @@ void uriencode_init(void) {
     }
 }
 
+// 映射转换
 bool uriencode(const char *src, char *dst, const size_t srclen, const size_t dstlen) {
     int x;
     size_t d = 0;
@@ -46,6 +51,8 @@ bool uriencode(const char *src, char *dst, const size_t srclen, const size_t dst
 /* Avoid warnings on solaris, where isspace() is an index into an array, and gcc uses signed chars */
 #define xisspace(c) isspace((unsigned char)c)
 
+// Convert string to unsigned long long integer
+// 返回 true 或 false
 bool safe_strtoull(const char *str, uint64_t *out) {
     assert(out != NULL);
     errno = 0;
