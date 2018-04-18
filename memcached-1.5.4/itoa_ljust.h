@@ -16,6 +16,9 @@
 // Copyright (c) 2016 Arturo Martin-de-Nicolas
 // arturomdn@gmail.com
 // https://github.com/amdn/itoa_ljust/
+
+// 原型 char* itoa(int value, char* str, int base); 
+// 32位和64位整形转换字符串
 //===----------------------------------------------------------------------===//
 
 #include <stdint.h>
