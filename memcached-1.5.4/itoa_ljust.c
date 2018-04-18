@@ -57,7 +57,9 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //===----------------------------------------------------------------------===//
-
+/** Protocol Buffers，是 Google 公司开发的一种数据描述语言，
+ *  类似于 XML 能够将结构化数据序列化，可用于数据存储、通信协议等方面。
+ */
 #include "itoa_ljust.h"
 #include <string.h>
 
