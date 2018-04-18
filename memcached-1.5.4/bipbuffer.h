@@ -1,6 +1,7 @@
 #ifndef BIPBUFFER_H
 #define BIPBUFFER_H
 
+// bip buffer(两段式循环缓冲区) 结构体
 typedef struct
 {
     unsigned long int size;
