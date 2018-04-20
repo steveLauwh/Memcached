@@ -1,6 +1,7 @@
 #ifndef CRAWLER_H
 #define CRAWLER_H
 
+// 爬虫：统计结构体
 typedef struct {
     uint64_t histo[61];
     uint64_t ttl_hourplus;
@@ -12,6 +13,7 @@ typedef struct {
     bool run_complete;
 } crawlerstats_t;
 
+// 爬虫：过期数据的结构体
 struct crawler_expired_data {
     pthread_mutex_t lock;
     crawlerstats_t crawlerstats[POWER_LARGEST];
@@ -25,8 +27,11 @@ struct crawler_expired_data {
 enum crawler_result_type {
     CRAWLER_OK=0, CRAWLER_RUNNING, CRAWLER_BADCLASS, CRAWLER_NOTSTARTED, CRAWLER_ERROR
 };
+// 开始爬虫线程
 int start_item_crawler_thread(void);
+// 终止爬虫线程
 int stop_item_crawler_thread(void);
+// 初始化爬虫线程
 int init_lru_crawler(void *arg);
 enum crawler_result_type lru_crawler_crawl(char *slabs, enum crawler_run_type, void *c, const int sfd);
 int lru_crawler_start(uint8_t *ids, uint32_t remaining,
