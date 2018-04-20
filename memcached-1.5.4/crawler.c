@@ -646,10 +646,12 @@ void lru_crawler_resume(void) {
 // 互斥锁初始化，lru_crawler_lock
 int init_lru_crawler(void *arg) {
     if (lru_crawler_initialized == 0) {
+        // 初始化条件变量
         if (pthread_cond_init(&lru_crawler_cond, NULL) != 0) {
             fprintf(stderr, "Can't initialize lru crawler condition\n");
             return -1;
         }
+        // 初始化互斥锁
         pthread_mutex_init(&lru_crawler_lock, NULL);
         active_crawler_mod.c.c = NULL;
         active_crawler_mod.mod = NULL;
@@ -658,3 +660,4 @@ int init_lru_crawler(void *arg) {
     }
     return 0;
 }
+
