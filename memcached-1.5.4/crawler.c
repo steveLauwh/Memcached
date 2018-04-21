@@ -3,6 +3,7 @@
  *  Use and distribution licensed under the BSD license.  See
  *  the LICENSE file for full text.
  */
+// Memcached 使用一个独立的线程(LRU crawler 爬虫线程)对过期失效的缓存数据进行处理
 
 /* -*- Mode: C; tab-width: 4; c-basic-offset: 4; indent-tabs-mode: nil -*- */
 #include "memcached.h"
@@ -23,6 +24,7 @@
 
 #define LARGEST_ID POWER_LARGEST
 
+// crawler 客户端
 typedef struct {
     void *c; /* original connection structure. still with source thread attached. */
     int sfd; /* client fd. */
@@ -319,6 +321,7 @@ static void lru_crawler_class_done(int i) {
         active_crawler_mod.mod->doneclass(&active_crawler_mod, i);
 }
 
+// 线程启动函数
 static void *item_crawler_thread(void *arg) {
     int i;
     int crawls_persleep = settings.crawls_persleep;
@@ -329,6 +332,7 @@ static void *item_crawler_thread(void *arg) {
     if (settings.verbose > 2)
         fprintf(stderr, "Starting LRU crawler background thread\n");
     while (do_run_lru_crawler_thread) {
+	// 等待worker线程指定 ,要处理的LRU队列 
     pthread_cond_wait(&lru_crawler_cond, &lru_crawler_lock);
 
     while (crawler_count) {
@@ -435,12 +439,15 @@ static void *item_crawler_thread(void *arg) {
 
 static pthread_t item_crawler_tid;
 
+// 终止LRU 爬虫线程
 int stop_item_crawler_thread(void) {
     int ret;
     pthread_mutex_lock(&lru_crawler_lock);
     do_run_lru_crawler_thread = 0;
+	// 条件变量信号发送
     pthread_cond_signal(&lru_crawler_cond);
     pthread_mutex_unlock(&lru_crawler_lock);
+	// 等待LRU 爬虫线程终止
     if ((ret = pthread_join(item_crawler_tid, NULL)) != 0) {
         fprintf(stderr, "Failed to stop LRU crawler thread: %s\n", strerror(ret));
         return -1;
@@ -460,13 +467,17 @@ int stop_item_crawler_thread(void) {
  * caller immediately releases lock.
  * thread is now safely waiting on condition before the caller returns.
  */
+// 启动LRU 爬虫线程
 int start_item_crawler_thread(void) {
     int ret;
 
+	// 当LRU 爬虫线程启动后，为true，所以不会有两个爬虫线程
     if (settings.lru_crawler)
         return -1;
+	// 互斥锁上锁
     pthread_mutex_lock(&lru_crawler_lock);
     do_run_lru_crawler_thread = 1;
+	// 创建爬虫线程
     if ((ret = pthread_create(&item_crawler_tid, NULL,
         item_crawler_thread, NULL)) != 0) {
         fprintf(stderr, "Can't create LRU crawler thread: %s\n",
@@ -475,6 +486,7 @@ int start_item_crawler_thread(void) {
         return -1;
     }
     /* Avoid returning until the crawler has actually started */
+	// 等待条件变量为真
     pthread_cond_wait(&lru_crawler_cond, &lru_crawler_lock);
     pthread_mutex_unlock(&lru_crawler_lock);
 
@@ -646,12 +658,12 @@ void lru_crawler_resume(void) {
 // 互斥锁初始化，lru_crawler_lock
 int init_lru_crawler(void *arg) {
     if (lru_crawler_initialized == 0) {
-        // 初始化条件变量
+		// 初始化条件变量
         if (pthread_cond_init(&lru_crawler_cond, NULL) != 0) {
             fprintf(stderr, "Can't initialize lru crawler condition\n");
             return -1;
         }
-        // 初始化互斥锁
+		// 初始化互斥锁
         pthread_mutex_init(&lru_crawler_lock, NULL);
         active_crawler_mod.c.c = NULL;
         active_crawler_mod.mod = NULL;
@@ -660,4 +672,3 @@ int init_lru_crawler(void *arg) {
     }
     return 0;
 }
-
