@@ -15,11 +15,13 @@
 
 #include "bipbuffer.h"
 
+// bip buffer 大小
 static size_t bipbuf_sizeof(const unsigned int size)
 {
     return sizeof(bipbuf_t) + size;
 }
 
+// bip buffer 未用空间
 int bipbuf_unused(const bipbuf_t* me)
 {
     if (1 == me->b_inuse)
