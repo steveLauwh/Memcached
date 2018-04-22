@@ -36,9 +36,9 @@ lru_pull_tail 函数
 
 Memcached 使用一个独立的线程(LRU crawler 爬虫线程)对过期失效的缓存数据进行处理。
 
-后面具体分析：crawler.c 文件
+后面具体分析：[crawler.c](https://github.com/steveLauwh/Memcached/blob/master/memcached-1.5.4/crawler.c) 文件
 
-
+原理：在 LRU 链表尾部插入一个伪 item，向前遍历，删除失效的 item。
 
 
 
