@@ -34,6 +34,7 @@ typedef struct {
 
 typedef struct _crawler_module_t crawler_module_t;
 
+// 函数指针
 typedef void (*crawler_eval_func)(crawler_module_t *cm, item *it, uint32_t hv, int slab_cls);
 typedef int (*crawler_init_func)(crawler_module_t *cm, void *data); // TODO: init args?
 typedef void (*crawler_deinit_func)(crawler_module_t *cm); // TODO: extra args?
@@ -296,6 +297,7 @@ static int lru_crawler_poll(crawler_client_t *c) {
  * for it to clear up or close.
  * Return NULL if closed.
  */
+// 从 bipbuffer 从获取内存空间
 static int lru_crawler_client_getbuf(crawler_client_t *c) {
     void *buf = NULL;
     if (c->c == NULL) return -1;
@@ -310,10 +312,11 @@ static int lru_crawler_client_getbuf(crawler_client_t *c) {
     return 0;
 }
 
+// 将这个伪 item 从 LRU 队列中删除  
 static void lru_crawler_class_done(int i) {
     crawlers[i].it_flags = 0;
     crawler_count--;
-    do_item_unlinktail_q((item *)&crawlers[i]);
+    do_item_unlinktail_q((item *)&crawlers[i]); // 将这个伪 item 从 LRU 队列中删除  
     do_item_stats_add_crawl(i, crawlers[i].reclaimed,
             crawlers[i].unfetched, crawlers[i].checked);
     pthread_mutex_unlock(&lru_locks[i]);
@@ -321,7 +324,7 @@ static void lru_crawler_class_done(int i) {
         active_crawler_mod.mod->doneclass(&active_crawler_mod, i);
 }
 
-// 线程启动函数
+// 线程启动函数，清理失效的 item
 static void *item_crawler_thread(void *arg) {
     int i;
     int crawls_persleep = settings.crawls_persleep;
@@ -332,9 +335,10 @@ static void *item_crawler_thread(void *arg) {
     if (settings.verbose > 2)
         fprintf(stderr, "Starting LRU crawler background thread\n");
     while (do_run_lru_crawler_thread) {
-    // 等待worker线程指定 ,要处理的LRU队列 
+    // 等待 worker 线程指定 ,要处理的 LRU 队列 
     pthread_cond_wait(&lru_crawler_cond, &lru_crawler_lock);
 
+    // 表明要处理多少个 LRU 队列
     while (crawler_count) {
         item *search = NULL;
         void *hold_lock = NULL;
@@ -356,6 +360,7 @@ static void *item_crawler_thread(void *arg) {
                 continue;
             }
             pthread_mutex_lock(&lru_locks[i]);
+	    //返回 crawlers[i] 的前驱节点,并交换 crawlers[i] 和前驱节点的位置 
             search = do_item_crawl_q((item *)&crawlers[i]);
             if (search == NULL ||
                 (crawlers[i].remaining && --crawlers[i].remaining < 1)) {
@@ -389,6 +394,7 @@ static void *item_crawler_thread(void *arg) {
                 pthread_mutex_unlock(&lru_locks[i]);
             }
 
+	    // item 失效，就删除
             active_crawler_mod.mod->eval(&active_crawler_mod, search, hv, i);
 
             if (hold_lock)
@@ -496,6 +502,7 @@ int start_item_crawler_thread(void) {
 /* 'remaining' is passed in so the LRU maintainer thread can scrub the whole
  * LRU every time.
  */
+// 将伪 item 插入到 LRU 队列尾部
 static int do_lru_crawler_start(uint32_t id, uint32_t remaining) {
     uint32_t sid = id;
     int starts = 0;
@@ -516,7 +523,7 @@ static int do_lru_crawler_start(uint32_t id, uint32_t remaining) {
         crawlers[sid].unfetched = 0;
         crawlers[sid].checked = 0;
         do_item_linktail_q((item *)&crawlers[sid]);
-        crawler_count++;
+        crawler_count++; //要处理的 LRU 队列加 1 
         starts++;
     }
     pthread_mutex_unlock(&lru_locks[sid]);
@@ -544,12 +551,14 @@ static int lru_crawler_set_client(crawler_module_t *cm, void *c, const int sfd) 
     return 0;
 }
 
+// 开始 LRU 爬虫
 int lru_crawler_start(uint8_t *ids, uint32_t remaining,
                              const enum crawler_run_type type, void *data,
                              void *c, const int sfd) {
     int starts = 0;
     bool is_running;
     static rel_time_t block_ae_until = 0;
+    // 上锁
     pthread_mutex_lock(&lru_crawler_lock);
     STATS_LOCK();
     is_running = stats_state.lru_crawler_running;
@@ -591,6 +600,7 @@ int lru_crawler_start(uint8_t *ids, uint32_t remaining,
         if (ids[sid])
             starts += do_lru_crawler_start(sid, remaining);
     }
+    // 唤醒 LRU 爬虫线程，让其执行清理任务 
     if (starts) {
         pthread_cond_signal(&lru_crawler_cond);
     }
@@ -612,14 +622,16 @@ enum crawler_result_type lru_crawler_crawl(char *slabs, const enum crawler_run_t
     memset(tocrawl, 0, sizeof(uint8_t) * POWER_LARGEST);
     if (strcmp(slabs, "all") == 0) {
         for (sid = 0; sid < POWER_LARGEST; sid++) {
-            tocrawl[sid] = 1;
+            tocrawl[sid] = 1; // 处理全部 LRU 队列
         }
     } else {
+        // 分隔字符串
         for (char *p = strtok_r(slabs, ",", &b);
-             p != NULL;
-             p = strtok_r(NULL, ",", &b)) {
+            p != NULL;
+	    p = strtok_r(NULL, ",", &b)) {
 
-            if (!safe_strtoul(p, &sid) || sid < POWER_SMALLEST
+	    // 解析 sid
+	    if (!safe_strtoul(p, &sid) || sid < POWER_SMALLEST
                     || sid >= MAX_NUMBER_OF_SLAB_CLASSES) {
                 pthread_mutex_unlock(&lru_crawler_lock);
                 return CRAWLER_BADCLASS;
@@ -644,11 +656,13 @@ enum crawler_result_type lru_crawler_crawl(char *slabs, const enum crawler_run_t
     }
 }
 
+// 暂停 LRU 爬虫(上锁)
 /* If we hold this lock, crawler can't wake up or move */
 void lru_crawler_pause(void) {
     pthread_mutex_lock(&lru_crawler_lock);
 }
 
+// 恢复 LRU 爬虫(解锁)
 void lru_crawler_resume(void) {
     pthread_mutex_unlock(&lru_crawler_lock);
 }
