@@ -35,6 +35,7 @@
 
 /* This version has been modified by dormando for inclusion in memcached */
 
+// 用 Inter crc32 指令计算 CRC-32C
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
