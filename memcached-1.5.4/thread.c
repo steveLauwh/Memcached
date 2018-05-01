@@ -2,6 +2,7 @@
 /*
  * Thread management for memcached.
  */
+// memcached 线程管理
 #include "memcached.h"
 #include <assert.h>
 #include <stdio.h>
@@ -181,7 +182,7 @@ void pause_threads(enum pause_thread_types type) {
  * Initializes a connection queue.
  */
 /******************************************************************
-  * 函数功能:  初始化CQ 队列，其实就是单链表
+  * 函数功能:  初始化 CQ 队列，其实就是单链表
   ******************************************************************/
 static void cq_init(CQ *cq) {
     pthread_mutex_init(&cq->lock, NULL);
@@ -195,12 +196,12 @@ static void cq_init(CQ *cq) {
  * Returns the item, or NULL if no item is available
  */
 /******************************************************************
-  * 函数功能:  从worker 线程的CQ 队列里pop 一个CQ_ITEM，队列头弹出
+  * 函数功能:  从 worker 线程的 CQ 队列里 pop 一个 CQ_ITEM，队列头弹出
   ******************************************************************/
 static CQ_ITEM *cq_pop(CQ *cq) {
     CQ_ITEM *item;
 
-	// 单链表，取出链表头部
+    // 单链表，取出链表头部
     pthread_mutex_lock(&cq->lock);
     item = cq->head;
     if (NULL != item) {
@@ -217,12 +218,12 @@ static CQ_ITEM *cq_pop(CQ *cq) {
  * Adds an item to a connection queue.
  */
 /******************************************************************
-  * 函数功能:  向worker 线程的CQ 队列里push 一个CQ_ITEM
+  * 函数功能:  向 worker 线程的 CQ 队列里 push 一个CQ_ITEM
   ******************************************************************/
 static void cq_push(CQ *cq, CQ_ITEM *item) {
     item->next = NULL;
 
-	// push 前先加锁
+    // push 前先加锁
     pthread_mutex_lock(&cq->lock);
     if (NULL == cq->tail)
         cq->head = item;
@@ -240,7 +241,7 @@ static void cq_push(CQ *cq, CQ_ITEM *item) {
   ******************************************************************/
 static CQ_ITEM *cqi_new(void) {
     CQ_ITEM *item = NULL;
-	// 所有线程都要访问cqi_freelist ，需加锁
+    // 所有线程都要访问cqi_freelist ，需加锁
     pthread_mutex_lock(&cqi_freelist_lock);
     if (cqi_freelist) {
         item = cqi_freelist;
@@ -297,7 +298,7 @@ static void cqi_free(CQ_ITEM *item) {
  * Creates a worker thread.
  */
 /******************************************************************
-  * 函数功能:真正调用pthread_create 创建线程
+  * 函数功能:真正调用 pthread_create 创建线程
 ******************************************************************/
 static void create_worker(void *(*func)(void *), void *arg) {
     pthread_attr_t  attr;
@@ -305,7 +306,7 @@ static void create_worker(void *(*func)(void *), void *arg) {
 
     pthread_attr_init(&attr);
 
-	// 创建工作线程
+    // 创建工作线程
     if ((ret = pthread_create(&((LIBEVENT_THREAD*)arg)->thread_id, &attr, func, arg)) != 0) {
         fprintf(stderr, "Can't create thread: %s\n",
                 strerror(ret));
@@ -337,18 +338,18 @@ static void setup_thread(LIBEVENT_THREAD *me) {
     }
 
     /* Listen for notifications from other threads */
-	// 当pipe 中写入事件的时候，libevent 就回调thread_libevent_process 方法
+    // 当pipe 中写入事件的时候，libevent 就回调 thread_libevent_process 方法
     event_set(&me->notify_event, me->notify_receive_fd,
               EV_READ | EV_PERSIST, thread_libevent_process, me);
     event_base_set(me->base, &me->notify_event); // 关联
 
-	// 添加事件操作
+    // 添加事件操作
     if (event_add(&me->notify_event, 0) == -1) {
         fprintf(stderr, "Can't monitor libevent notify pipe\n");
         exit(1);
     }
 
-	// 初始化一个工作队列
+    // 初始化一个工作队列
     me->new_conn_queue = malloc(sizeof(struct conn_queue));
     if (me->new_conn_queue == NULL) {
         perror("Failed to allocate memory for connection queue");
@@ -356,7 +357,7 @@ static void setup_thread(LIBEVENT_THREAD *me) {
     }
     cq_init(me->new_conn_queue);
 
-	// 初始化互斥锁
+    // 初始化互斥锁
     if (pthread_mutex_init(&me->stats.mutex, NULL) != 0) {
         perror("Failed to initialize mutex");
         exit(EXIT_FAILURE);
@@ -391,8 +392,8 @@ static void *worker_libevent(void *arg) {
 
     register_thread_initialized();
 
-	// 开启事件的循环，每个线程都有独立的even_base 和事件循环机制
-	// 参数为0，则只有事件进来的时候才会调用一次事件的回调函数
+    // 开启事件的循环，每个线程都有独立的even_base 和事件循环机制
+    // 参数为0，则只有事件进来的时候才会调用一次事件的回调函数
     event_base_loop(me->base, 0);
     return NULL;
 }
@@ -412,8 +413,8 @@ static void thread_libevent_process(int fd, short which, void *arg) {
     conn *c;
     unsigned int timeout_fd;
 
-	// 主线程中如果有新的连接，会向其中一个线程的pipe 写入1个字节
-	// 这里读取pipe 中的数据
+    // 主线程中如果有新的连接，会向其中一个线程的pipe 写入1个字节
+    // 这里读取pipe 中的数据
     if (read(fd, buf, 1) != 1) { // 若成功，返回读到的字节数
         if (settings.verbose > 0)
             fprintf(stderr, "Can't read from libevent pipe\n");
@@ -422,7 +423,7 @@ static void thread_libevent_process(int fd, short which, void *arg) {
 
     switch (buf[0]) {
     case 'c':
-		// 从工作线程的队列中获取一个CQ_ITEM 连接信息
+	// 从工作线程的队列中获取一个CQ_ITEM 连接信息
         item = cq_pop(me->new_conn_queue);
 
         if (NULL == item) {
@@ -494,7 +495,7 @@ void dispatch_conn_new(int sfd, enum conn_states init_state, int event_flags,
         return ;
     }
 
-	// 求余法
+    // 求余法
     int tid = (last_thread + 1) % settings.num_threads;
 
     LIBEVENT_THREAD *thread = threads + tid;
@@ -508,7 +509,7 @@ void dispatch_conn_new(int sfd, enum conn_states init_state, int event_flags,
     item->transport = transport;
     item->mode = queue_new_conn;
 
-	// 把这个item 放到选定的worker 线程的CQ 队列中
+    // 把这个 item 放到选定的 worker 线程的 CQ 队列中
     cq_push(thread->new_conn_queue, item);
 
     MEMCACHED_CONN_DISPATCH(sfd, thread->thread_id);
@@ -763,7 +764,7 @@ void memcached_thread_init(int nthreads, void *arg) {
     pthread_mutex_init(&init_lock, NULL);
     pthread_cond_init(&init_cond, NULL);
 
-	// 申请一个CQ_ITEM 时需要加锁
+    // 申请一个CQ_ITEM 时需要加锁
     pthread_mutex_init(&cqi_freelist_lock, NULL);
     cqi_freelist = NULL;
 
@@ -802,17 +803,18 @@ void memcached_thread_init(int nthreads, void *arg) {
         pthread_mutex_init(&item_locks[i], NULL);
     }
 
-	// 申请nthreads 个元素的LIBEVENT_THREAD 数组
+    // 申请nthreads 个元素的LIBEVENT_THREAD 数组
     threads = calloc(nthreads, sizeof(LIBEVENT_THREAD));
     if (! threads) {
         perror("Can't allocate thread descriptors");
         exit(1);
     }
 
-	// 创建nthreads 个工作线程
+    // 创建nthreads 个工作线程
     for (i = 0; i < nthreads; i++) {
         int fds[2];
-		// 创建管道pipe，用于主线程和工作线程通信
+	
+	// 创建管道pipe，用于主线程和工作线程通信
         if (pipe(fds)) {
             perror("Can't create notify pipe");
             exit(1);
@@ -821,14 +823,14 @@ void memcached_thread_init(int nthreads, void *arg) {
         threads[i].notify_receive_fd = fds[0]; // 接收端(读端)
         threads[i].notify_send_fd = fds[1];    // 发送端(写端)
 
-		// 创建每个线程自己的libevent
+	// 创建每个线程自己的libevent
         setup_thread(&threads[i]);
         /* Reserve three fds for the libevent base, and two for the pipe */
         stats_state.reserved_fds += 5;
     }
 
     /* Create threads after we've done all the libevent setup. */
-	// 真正创建工作线程，回调函数
+    // 真正创建工作线程，回调函数
     for (i = 0; i < nthreads; i++) {
         create_worker(worker_libevent, &threads[i]);
     }
