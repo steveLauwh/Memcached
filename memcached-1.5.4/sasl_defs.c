@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sasl/saslplug.h>
 
+// SASL 全称 Simple Authentication and Security Layer,是一种用来扩充 C/S 模式验证能力的机制。
 char my_sasl_hostname[1025];
 
 #ifdef HAVE_SASL_CB_GETCONF
