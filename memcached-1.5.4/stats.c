@@ -18,9 +18,10 @@
  * fixed-size hash of prefixes; we run the prefixes through the same
  * CRC function used by the cache hashtable.
  */
+// 统计结构体，链表组成的散列
 typedef struct _prefix_stats PREFIX_STATS;
 struct _prefix_stats {
-    char         *prefix;
+    char         *prefix;  // key
     size_t        prefix_len;
     uint64_t      num_gets;
     uint64_t      num_sets;
@@ -35,6 +36,7 @@ static PREFIX_STATS *prefix_stats[PREFIX_HASH_SIZE];
 static int num_prefixes = 0;
 static int total_prefix_size = 0;
 
+// 统计初始化
 void stats_prefix_init() {
     memset(prefix_stats, 0, sizeof(prefix_stats));
 }
@@ -43,6 +45,7 @@ void stats_prefix_init() {
  * Cleans up all our previously collected stats. NOTE: the stats lock is
  * assumed to be held when this is called.
  */
+// 统计清除
 void stats_prefix_clear() {
     int i;
 
@@ -64,6 +67,7 @@ void stats_prefix_clear() {
  * in the list.
  */
 /*@null@*/
+// 查找
 static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
     PREFIX_STATS *pfs;
     uint32_t hashval;
@@ -83,6 +87,7 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
         return NULL;
     }
 
+    // hash 查找
     hashval = hash(key, length) % PREFIX_HASH_SIZE;
 
     for (pfs = prefix_stats[hashval]; NULL != pfs; pfs = pfs->next) {
@@ -103,6 +108,7 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
         return NULL;
     }
 
+    // 没找到就创建，插入
     strncpy(pfs->prefix, key, length);
     pfs->prefix[length] = '\0';      /* because strncpy() sucks */
     pfs->prefix_len = length;
@@ -119,6 +125,7 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
 /*
  * Records a "get" of a key.
  */
+// 记录 key 为 get 
 void stats_prefix_record_get(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
@@ -136,6 +143,7 @@ void stats_prefix_record_get(const char *key, const size_t nkey, const bool is_h
 /*
  * Records a "delete" of a key.
  */
+// 记录 key 为 delete
 void stats_prefix_record_delete(const char *key, const size_t nkey) {
     PREFIX_STATS *pfs;
 
@@ -150,6 +158,7 @@ void stats_prefix_record_delete(const char *key, const size_t nkey) {
 /*
  * Records a "set" of a key.
  */
+// 记录 key 为 set
 void stats_prefix_record_set(const char *key, const size_t nkey) {
     PREFIX_STATS *pfs;
 
@@ -347,6 +356,7 @@ static void test_prefix_dump() {
                     strlen(tmp), length);
 }
 
+// 测试
 static void run_test(char *what, void (*func)(void)) {
     current_test = what;
     test_count = fail_count = 0;
